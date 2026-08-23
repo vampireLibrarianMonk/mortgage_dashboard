@@ -64,6 +64,7 @@ class VehicleExpenses(BaseModel):
     gasoline_weekly: float = Field(ge=0, default=0)
     car_maintenance_annual: float = Field(ge=0, default=0)
     car_insurance_monthly: float = Field(ge=0, default=0)
+    hov_monthly: float = Field(ge=0, default=0)
 
 
 class CollegeSavings(BaseModel):

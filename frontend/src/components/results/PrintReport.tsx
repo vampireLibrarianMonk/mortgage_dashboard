@@ -206,6 +206,7 @@ export default function PrintReport({ result, state }: Props) {
             <tr><td>Gasoline</td><td>{ve.gasoline_weekly > 0 ? `${fmt(ve.gasoline_weekly)}/week` : "—"}</td></tr>
             <tr><td>Car Maintenance</td><td>{ve.car_maintenance_annual > 0 ? `${fmt(ve.car_maintenance_annual)}/year` : "—"}</td></tr>
             <tr><td>Car Insurance</td><td>{ve.car_insurance_monthly > 0 ? `${fmt(ve.car_insurance_monthly)}/mo` : "—"}</td></tr>
+            <tr><td>HOV / Tolls</td><td>{ve.hov_monthly > 0 ? `${fmt(ve.hov_monthly)}/mo` : "—"}</td></tr>
             <tr className="separator"><td colSpan={2}></td></tr>
             <tr><td><strong>Monthly Total</strong></td><td><strong>{fmt(r.vehicle_monthly)}</strong></td></tr>
           </tbody>

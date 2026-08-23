@@ -48,6 +48,7 @@ const defaults: CalculateRequest = {
     gasoline_weekly: 0,
     car_maintenance_annual: 0,
     car_insurance_monthly: 0,
+    hov_monthly: 0,
   },
   college_savings: {
     contribution_annual_per_child: 0,

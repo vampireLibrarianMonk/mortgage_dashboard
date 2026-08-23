@@ -1,6 +1,6 @@
 import type { CalculateRequest, CalculateResponse } from "./types";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "http://localhost:8001";
 
 export async function calculateMortgage(req: CalculateRequest): Promise<CalculateResponse> {
   const res = await fetch(`${API_BASE}/calculate`, {

@@ -289,6 +289,7 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         + _weekly_to_monthly(ve.gasoline_weekly)
         + _annual_to_monthly(ve.car_maintenance_annual)
         + ve.car_insurance_monthly
+        + ve.hov_monthly
     )
 
     # College monthly

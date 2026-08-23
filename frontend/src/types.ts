@@ -55,6 +55,7 @@ export interface VehicleExpenses {
   gasoline_weekly: number;
   car_maintenance_annual: number;
   car_insurance_monthly: number;
+  hov_monthly: number;
 }
 
 export interface CollegeSavings {
