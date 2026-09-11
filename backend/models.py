@@ -103,8 +103,17 @@ class LumpSumPayment(BaseModel):
     amount: float = Field(gt=0)
 
 
+class EscalatingExtraPrincipal(BaseModel):
+    """A monthly extra-principal payment that increases by a fixed amount once per year."""
+    start_amount: float = Field(gt=0)  # initial monthly extra payment
+    annual_increase: float = Field(ge=0, default=0)  # added to the monthly amount each anniversary year
+    start_year: int
+    end_year: int | None = None  # None means "until payoff"
+
+
 class ExtraPrincipal(BaseModel):
     recurring: RecurringExtraPrincipal | None = None
+    escalating: EscalatingExtraPrincipal | None = None
     lump_sums: list[LumpSumPayment] = []
 
 

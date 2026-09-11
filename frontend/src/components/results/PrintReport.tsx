@@ -120,7 +120,7 @@ export default function PrintReport({ result, state }: Props) {
       </section>
 
       {/* ─── EXTRA PRINCIPAL ─── */}
-      {(ep.recurring || ep.lump_sums.length > 0) && (
+      {(ep.recurring || ep.escalating || ep.lump_sums.length > 0) && (
         <section className="report-section">
           <h2>Extra Principal Strategy</h2>
           <table className="report-table">
@@ -130,6 +130,15 @@ export default function PrintReport({ result, state }: Props) {
                   <tr><td>Recurring Amount</td><td>{fmt(ep.recurring.amount)} / {freqLabel(ep.recurring.frequency)}</td></tr>
                   <tr><td>Period</td><td>{ep.recurring.start_year} — {ep.recurring.end_year ?? "Until Payoff"}</td></tr>
                   <tr><td>Monthly Equivalent</td><td>{fmt(r.scheduled_extra_principal_monthly)}</td></tr>
+                </>
+              )}
+              {ep.escalating && (
+                <>
+                  {ep.recurring && <tr className="separator"><td colSpan={2}></td></tr>}
+                  <tr><td><strong>Escalating Monthly Payment</strong></td><td></td></tr>
+                  <tr><td style={{paddingLeft: "1rem"}}>Starting Amount</td><td>{fmt(ep.escalating.start_amount)} / mo</td></tr>
+                  <tr><td style={{paddingLeft: "1rem"}}>Annual Increase</td><td>{fmt(ep.escalating.annual_increase)} / yr</td></tr>
+                  <tr><td style={{paddingLeft: "1rem"}}>Period</td><td>{ep.escalating.start_year} — {ep.escalating.end_year ?? "Until Payoff"}</td></tr>
                 </>
               )}
               {ep.lump_sums.length > 0 && (

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ExtraPrincipal, ExtraPrincipalFrequency, LumpSumPayment } from "../../types";
+import type { ExtraPrincipal, ExtraPrincipalFrequency, LumpSumPayment, EscalatingExtraPrincipal } from "../../types";
 import NumberInput from "./NumberInput";
 
 interface Props {
@@ -30,6 +30,32 @@ export default function ExtraPrincipalSection({ data, onChange }: Props) {
       setRecurring("end_year", null);
     } else {
       setRecurring("end_year", 2056);
+    }
+  };
+
+  // --- Escalating monthly extra principal ---
+  const setEscalating = (field: string, value: unknown) => {
+    const current: EscalatingExtraPrincipal =
+      data.escalating ?? { start_amount: 0, annual_increase: 0, start_year: 2026, end_year: null };
+    onChange({ ...data, escalating: { ...current, [field]: value } });
+  };
+
+  const toggleEscalating = (enabled: boolean) => {
+    onChange({
+      ...data,
+      escalating: enabled
+        ? { start_amount: 500, annual_increase: 100, start_year: 2026, end_year: null }
+        : null,
+    });
+  };
+
+  const escUntilPayoff = data.escalating?.end_year === null;
+
+  const toggleEscUntilPayoff = (checked: boolean) => {
+    if (checked) {
+      setEscalating("end_year", null);
+    } else {
+      setEscalating("end_year", 2056);
     }
   };
 
@@ -81,6 +107,25 @@ export default function ExtraPrincipalSection({ data, onChange }: Props) {
           </div>
           {!untilPayoff && (
             <NumberInput label="End Year" value={data.recurring.end_year ?? 2056} onChange={(v) => setRecurring("end_year", v)} step="1" />
+          )}
+        </>
+      )}
+      <h4>Escalating Monthly Payment</h4>
+      <div className="field-row">
+        <label>Enable Escalating</label>
+        <input type="checkbox" checked={data.escalating !== null} onChange={(e) => toggleEscalating(e.target.checked)} />
+      </div>
+      {data.escalating && (
+        <>
+          <NumberInput label="Starting Amount (monthly)" value={data.escalating.start_amount} onChange={(v) => setEscalating("start_amount", v)} suffix="$/mo" />
+          <NumberInput label="Annual Increase" value={data.escalating.annual_increase} onChange={(v) => setEscalating("annual_increase", v)} suffix="$/yr" />
+          <NumberInput label="Start Year" value={data.escalating.start_year} onChange={(v) => setEscalating("start_year", v)} step="1" />
+          <div className="field-row">
+            <label>Until Payoff</label>
+            <input type="checkbox" checked={escUntilPayoff} onChange={(e) => toggleEscUntilPayoff(e.target.checked)} />
+          </div>
+          {!escUntilPayoff && (
+            <NumberInput label="End Year" value={data.escalating.end_year ?? 2056} onChange={(v) => setEscalating("end_year", v)} step="1" />
           )}
         </>
       )}

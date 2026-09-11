@@ -87,8 +87,16 @@ export interface LumpSumPayment {
   amount: number;
 }
 
+export interface EscalatingExtraPrincipal {
+  start_amount: number; // initial monthly extra payment
+  annual_increase: number; // added to the monthly amount each anniversary year
+  start_year: number;
+  end_year: number | null; // null means "until payoff"
+}
+
 export interface ExtraPrincipal {
   recurring: RecurringExtraPrincipal | null;
+  escalating: EscalatingExtraPrincipal | null;
   lump_sums: LumpSumPayment[];
 }
 

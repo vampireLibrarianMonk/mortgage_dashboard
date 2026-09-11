@@ -49,6 +49,19 @@ def _payments_per_year(freq: ExtraPrincipalFrequency) -> int:
     return {"monthly": 12, "quarterly": 4, "semi_annual": 2, "annual": 1}[freq.value]
 
 
+def _escalating_monthly_amount(req: CalculateRequest, current_year: int) -> float:
+    """Monthly escalating extra-principal amount active in current_year (0 if inactive)."""
+    esc = req.extra_principal.escalating
+    if esc is None:
+        return 0.0
+    if current_year < esc.start_year:
+        return 0.0
+    if esc.end_year is not None and current_year > esc.end_year:
+        return 0.0
+    years_elapsed = current_year - esc.start_year
+    return esc.start_amount + esc.annual_increase * years_elapsed
+
+
 def _simulate_amortization(
     principal: float,
     monthly_rate: float,
@@ -90,6 +103,12 @@ def _simulate_amortization(
                 if apply:
                     extra = min(ep.recurring.amount, balance)
                     balance -= extra
+
+        # Escalating monthly extra principal
+        esc_amount = _escalating_monthly_amount(req, current_year)
+        if esc_amount > 0 and balance > 0:
+            esc_pay = min(esc_amount, balance)
+            balance -= esc_pay
 
         # Lump sums (applied in January of the specified year)
         for ls in ep.lump_sums:
@@ -159,6 +178,13 @@ def _generate_amortization_schedule(
                     extra = min(ep.recurring.amount, balance)
                     balance -= extra
                     extra_applied += extra
+
+        # Escalating monthly extra principal
+        esc_amount = _escalating_monthly_amount(req, current_year)
+        if esc_amount > 0 and balance > 0:
+            esc_pay = min(esc_amount, balance)
+            balance -= esc_pay
+            extra_applied += esc_pay
 
         # Lump sums
         for ls in ep.lump_sums:
@@ -234,7 +260,11 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
     standard_payoff_date = f"{standard_payoff_year}-{standard_payoff_month:02d}"
 
     # Accelerated amortization
-    has_extra = req.extra_principal.recurring is not None or len(req.extra_principal.lump_sums) > 0
+    has_extra = (
+        req.extra_principal.recurring is not None
+        or req.extra_principal.escalating is not None
+        or len(req.extra_principal.lump_sums) > 0
+    )
     if has_extra:
         accel_payoff_date, accel_interest, accel_months = _simulate_amortization(
             loan_amount, monthly_rate, num_payments, required_monthly, req, lt.start_month, lt.start_year
@@ -249,7 +279,10 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         interest_savings = 0
 
     # Extra principal monthly equivalent
+    # Recurring flat portion + the escalating payment's starting monthly amount
     extra_monthly = _extra_principal_monthly_equivalent(req)
+    if req.extra_principal.escalating is not None:
+        extra_monthly += req.extra_principal.escalating.start_amount
     lump_sum_total = sum(ls.amount for ls in req.extra_principal.lump_sums)
 
     # Tax & cost monthly

@@ -58,6 +58,7 @@ const initialState: CalculateRequest = {
   take_home_pay: [],
   extra_principal: {
     recurring: null,
+    escalating: null,
     lump_sums: [],
   },
 };

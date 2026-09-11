@@ -180,9 +180,17 @@ fieldset {
 }
 
 legend {
+  float: left;
+  width: 100%;
   font-weight: 600;
-  padding: 0 0.5rem;
+  padding: 0;
+  margin-bottom: 0.75rem;
   color: var(--accent);
+}
+
+/* Clear the floated legend so following content flows below it */
+legend + * {
+  clear: both;
 }
 
 /* Tabs */
