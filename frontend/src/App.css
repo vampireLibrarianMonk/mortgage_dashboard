@@ -55,12 +55,6 @@ header h1 {
   background: var(--accent);
 }
 
-.header-total {
-  font-size: 1.1rem;
-  color: var(--accent);
-  font-weight: 600;
-}
-
 /* Profile bar */
 .profile-bar {
   margin-bottom: 1rem;
@@ -421,6 +415,34 @@ h4 {
 .results-panel dd {
   text-align: right;
   font-weight: 500;
+}
+
+/* Discretionary summary */
+.section-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: -0.25rem 0 0.6rem;
+}
+
+.discretionary-line {
+  display: contents;
+}
+
+.discretionary-summary .freq-note {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+.discretionary-total {
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.discretionary-total dd {
+  font-weight: 700;
 }
 
 /* Banner */

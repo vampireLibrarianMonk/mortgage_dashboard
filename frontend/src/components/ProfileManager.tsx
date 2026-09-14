@@ -55,6 +55,11 @@ const defaults: CalculateRequest = {
     number_of_children: 0,
   },
   additional_expenses: [],
+  discretionary: [
+    { name: "Eating Out", amount: 0, frequency: "monthly" },
+    { name: "Movies", amount: 0, frequency: "monthly" },
+    { name: "Vacations", amount: 0, frequency: "annual" },
+  ],
   take_home_pay: [],
   extra_principal: {
     recurring: null,

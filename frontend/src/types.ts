@@ -75,6 +75,12 @@ export interface IncomeRow {
   frequency: "monthly" | "annual";
 }
 
+export interface DiscretionaryRow {
+  name: string;
+  amount: number;
+  frequency: "weekly" | "monthly" | "annual";
+}
+
 export interface RecurringExtraPrincipal {
   amount: number;
   frequency: ExtraPrincipalFrequency;
@@ -109,6 +115,7 @@ export interface CalculateRequest {
   vehicle_expenses: VehicleExpenses;
   college_savings: CollegeSavings;
   additional_expenses: ExpenseRow[];
+  discretionary: DiscretionaryRow[];
   take_home_pay: IncomeRow[];
   extra_principal: ExtraPrincipal;
 }
@@ -136,6 +143,7 @@ export interface CalculateResponse {
   vehicle_monthly: number;
   college_monthly: number;
   additional_expenses_monthly: number;
+  discretionary_monthly: number;
   planned_monthly_housing_total: number;
   take_home_pay_monthly: number;
   monthly_leftover: number;

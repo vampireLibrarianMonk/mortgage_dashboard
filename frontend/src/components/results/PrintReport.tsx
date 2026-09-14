@@ -237,6 +237,27 @@ export default function PrintReport({ result, state }: Props) {
         </section>
       )}
 
+      {/* ─── DISCRETIONARY ─── */}
+      {state.discretionary.some((row) => row.amount > 0) && (
+        <section className="report-section">
+          <h2>Discretionary</h2>
+          <table className="report-table">
+            <tbody>
+              {state.discretionary
+                .filter((row) => row.amount > 0)
+                .map((row, i) => (
+                  <tr key={i}>
+                    <td>{row.name}</td>
+                    <td>{fmt(row.amount)}/{row.frequency === "monthly" ? "mo" : row.frequency === "weekly" ? "week" : "year"}</td>
+                  </tr>
+                ))}
+              <tr className="separator"><td colSpan={2}></td></tr>
+              <tr><td><strong>Monthly Total</strong></td><td><strong>{fmt(r.discretionary_monthly)}</strong></td></tr>
+            </tbody>
+          </table>
+        </section>
+      )}
+
       {/* ─── ADDITIONAL EXPENSES ─── */}
       {state.additional_expenses.length > 0 && (
         <section className="report-section">

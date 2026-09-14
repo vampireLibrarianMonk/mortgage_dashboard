@@ -1,31 +1,51 @@
-import type { CalculateResponse, PurchaseMode } from "../../types";
 import AmortizationChart from "./AmortizationChart";
+import type { CalculateResponse, PurchaseMode, DiscretionaryRow } from "../../types";
 
 interface Props {
   result: CalculateResponse;
   purchaseMode: PurchaseMode;
+  discretionary: DiscretionaryRow[];
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-export default function ResultsPanel({ result, purchaseMode }: Props) {
+const FREQ_LABEL: Record<DiscretionaryRow["frequency"], string> = {
+  weekly: "wk",
+  monthly: "mo",
+  annual: "yr",
+};
+
+/** Convert a discretionary row to its monthly-equivalent cost. */
+function rowMonthly(row: DiscretionaryRow): number {
+  if (row.frequency === "weekly") return (row.amount * 52) / 12;
+  if (row.frequency === "annual") return row.amount / 12;
+  return row.amount;
+}
+
+export default function ResultsPanel({ result, purchaseMode, discretionary }: Props) {
   const r = result;
   const isExisting = purchaseMode === "existing_mortgage";
+
+  // Rows with a real budget, ranked largest monthly cost first for quick cuts.
+  const discretionaryRanked = discretionary
+    .filter((row) => row.amount > 0)
+    .map((row) => ({ ...row, monthly: rowMonthly(row) }))
+    .sort((a, b) => b.monthly - a.monthly);
 
   return (
     <div className="results-panel">
       <div className="banner">
         <div className="banner-item">
-          <span className="banner-label">Required Monthly</span>
-          <span className="banner-value">{fmt(r.required_monthly_payment)}</span>
-        </div>
-        <div className="banner-item">
-          <span className="banner-label">Planned Outflow</span>
-          <span className="banner-value">{fmt(r.planned_mortgage_outflow_monthly)}</span>
-        </div>
-        <div className="banner-item">
           <span className="banner-label">Take Home Pay</span>
           <span className="banner-value">{fmt(r.take_home_pay_monthly)}</span>
+        </div>
+        <div className="banner-item">
+          <span className="banner-label">Total Outflow</span>
+          <span className="banner-value">{fmt(r.planned_monthly_housing_total)}</span>
+        </div>
+        <div className="banner-item">
+          <span className="banner-label">Discretionary</span>
+          <span className="banner-value">{fmt(r.discretionary_monthly)}</span>
         </div>
         <div className="banner-item">
           <span className={`banner-value ${r.monthly_leftover < 0 ? "negative" : "positive"}`}>
@@ -45,6 +65,26 @@ export default function ResultsPanel({ result, purchaseMode }: Props) {
           <dt>Monthly Leftover</dt><dd>{fmt(r.monthly_leftover)}</dd>
         </dl>
       </section>
+
+      {discretionaryRanked.length > 0 && (
+        <section className="discretionary-summary">
+          <h3>Discretionary Summary</h3>
+          <p className="section-hint">Ranked by monthly cost — start cutting from the top.</p>
+          <dl>
+            {discretionaryRanked.map((row, i) => (
+              <div className="discretionary-line" key={i}>
+                <dt>
+                  {row.name} <span className="freq-note">({fmt(row.amount)}/{FREQ_LABEL[row.frequency]})</span>
+                </dt>
+                <dd>{fmt(row.monthly)}/mo</dd>
+              </div>
+            ))}
+          </dl>
+          <dl className="discretionary-total">
+            <dt>Total Discretionary</dt><dd>{fmt(r.discretionary_monthly)}/mo</dd>
+          </dl>
+        </section>
+      )}
 
       {isExisting ? (
         <section>
@@ -87,6 +127,7 @@ export default function ResultsPanel({ result, purchaseMode }: Props) {
           <dt>Utilities Monthly</dt><dd>{fmt(r.utilities_monthly)}</dd>
           <dt>Vehicle Monthly</dt><dd>{fmt(r.vehicle_monthly)}</dd>
           <dt>College Monthly</dt><dd>{fmt(r.college_monthly)}</dd>
+          <dt>Discretionary Monthly</dt><dd>{fmt(r.discretionary_monthly)}</dd>
           <dt>Additional Expenses Monthly</dt><dd>{fmt(r.additional_expenses_monthly)}</dd>
         </dl>
       </section>

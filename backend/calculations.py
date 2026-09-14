@@ -335,6 +335,15 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         for row in req.additional_expenses
     )
 
+    # Discretionary (entertainment) monthly — supports weekly/monthly/annual
+    def _discretionary_row_monthly(row) -> float:
+        if row.frequency == "weekly":
+            return _weekly_to_monthly(row.amount)
+        if row.frequency == "annual":
+            return _annual_to_monthly(row.amount)
+        return row.amount  # monthly
+    discretionary_monthly = sum(_discretionary_row_monthly(row) for row in req.discretionary)
+
     # Required monthly with escrow (what the lender bills)
     # Escrow = property tax + insurance + PMI + HOA
     escrow_monthly = property_tax_monthly + _annual_to_monthly(tc.home_insurance_annual) + tc.pmi_monthly + tc.hoa_monthly
@@ -352,6 +361,7 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         + vehicle_monthly
         + college_monthly
         + additional_monthly
+        + discretionary_monthly
     )
 
     # Take home pay monthly
@@ -398,6 +408,7 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         vehicle_monthly=round(vehicle_monthly, 2),
         college_monthly=round(college_monthly, 2),
         additional_expenses_monthly=round(additional_monthly, 2),
+        discretionary_monthly=round(discretionary_monthly, 2),
         planned_monthly_housing_total=round(planned_monthly_housing_total, 2),
         take_home_pay_monthly=round(take_home_monthly, 2),
         monthly_leftover=round(monthly_leftover, 2),

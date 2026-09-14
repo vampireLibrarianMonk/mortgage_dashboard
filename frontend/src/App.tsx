@@ -7,6 +7,7 @@ import HouseholdExpensesSection from "./components/inputs/HouseholdExpenses";
 import UtilitiesSection from "./components/inputs/Utilities";
 import VehicleExpensesSection from "./components/inputs/VehicleExpenses";
 import CollegeSavingsSection from "./components/inputs/CollegeSavings";
+import Discretionary from "./components/inputs/Discretionary";
 import AdditionalExpenses from "./components/inputs/AdditionalExpenses";
 import TakeHomePay from "./components/inputs/TakeHomePay";
 import ExtraPrincipalSection from "./components/inputs/ExtraPrincipal";
@@ -48,11 +49,6 @@ function App() {
       <header>
         <h1>Mortgage &amp; Loan Assumptions</h1>
         {result && (
-          <span className="header-total">
-            Monthly: ${result.planned_monthly_housing_total.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-          </span>
-        )}
-        {result && (
           <button type="button" className="print-btn" onClick={handlePrint}>
             📄 Export PDF
           </button>
@@ -68,6 +64,7 @@ function App() {
           <UtilitiesSection data={state.utilities} onChange={setField("utilities")} />
           <VehicleExpensesSection data={state.vehicle_expenses} onChange={setField("vehicle_expenses")} />
           <CollegeSavingsSection data={state.college_savings} onChange={setField("college_savings")} />
+          <Discretionary data={state.discretionary} onChange={setSection("discretionary")} />
           <AdditionalExpenses data={state.additional_expenses} onChange={setSection("additional_expenses")} />
           <TakeHomePay data={state.take_home_pay} onChange={setSection("take_home_pay")} />
           <ExtraPrincipalSection data={state.extra_principal} onChange={setSection("extra_principal")} />
@@ -75,7 +72,7 @@ function App() {
         <div className="results-column">
           {loading && <p className="loading">Calculating…</p>}
           {error && <p className="error">{error}</p>}
-          {result && <ResultsPanel result={result} purchaseMode={state.house_purchase.purchase_mode} />}
+          {result && <ResultsPanel result={result} purchaseMode={state.house_purchase.purchase_mode} discretionary={state.discretionary} />}
         </div>
       </main>
 

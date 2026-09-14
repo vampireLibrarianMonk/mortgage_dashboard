@@ -78,6 +78,12 @@ class ExpenseRow(BaseModel):
     frequency: str = Field(pattern="^(monthly|annual)$")
 
 
+class DiscretionaryRow(BaseModel):
+    name: str
+    amount: float = Field(ge=0)
+    frequency: str = Field(pattern="^(weekly|monthly|annual)$")
+
+
 class IncomeRow(BaseModel):
     name: str
     amount: float = Field(gt=0)
@@ -126,6 +132,7 @@ class CalculateRequest(BaseModel):
     vehicle_expenses: VehicleExpenses = VehicleExpenses()
     college_savings: CollegeSavings = CollegeSavings()
     additional_expenses: list[ExpenseRow] = []
+    discretionary: list[DiscretionaryRow] = []
     take_home_pay: list[IncomeRow] = []
     extra_principal: ExtraPrincipal = ExtraPrincipal()
 
@@ -162,6 +169,7 @@ class CalculateResponse(BaseModel):
     vehicle_monthly: float
     college_monthly: float
     additional_expenses_monthly: float
+    discretionary_monthly: float
 
     # Affordability
     planned_monthly_housing_total: float
