@@ -1,6 +1,10 @@
 import type { CalculateRequest, CalculateResponse } from "./types";
 
-const API_BASE = "http://localhost:8001";
+// In dev, Vite proxies /calculate and /profiles to the backend (see vite.config.ts).
+// In production, FastAPI serves this built app, so same-origin relative paths work
+// directly and through the Caddy reverse proxy (app.mortgage-dashboard).
+// Override with VITE_API_BASE at build time if the API is hosted elsewhere.
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export async function calculateMortgage(req: CalculateRequest): Promise<CalculateResponse> {
   const res = await fetch(`${API_BASE}/calculate`, {

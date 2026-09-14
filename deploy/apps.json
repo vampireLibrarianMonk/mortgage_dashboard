@@ -1,0 +1,16 @@
+{
+  "$comment": "Registry of local apps served behind the Caddy reverse proxy. Each app gets a friendly hostname (app.<name>) mapped in the Windows hosts file to 127.0.0.1, and Caddy on :80 routes that hostname to the app's high port. Add a new app by appending an entry here, then re-run deploy/generate-caddyfile.ps1, deploy/update-hosts.ps1 (elevated), and deploy/register-startup.ps1 (elevated). Ports are reserved in the 9000s band to avoid conflicts with common services and the Windows ephemeral range (49152+).",
+  "proxy": {
+    "http_port": 80
+  },
+  "apps": [
+    {
+      "name": "mortgage-dashboard",
+      "hostname": "app.mortgage-dashboard",
+      "port": 9001,
+      "working_dir": "backend",
+      "start_command": "venv\\Scripts\\uvicorn.exe main:app --host 127.0.0.1 --port 9001",
+      "health_path": "/healthz"
+    }
+  ]
+}

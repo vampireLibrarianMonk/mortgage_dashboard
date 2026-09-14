@@ -28,3 +28,8 @@ backend/profiles/
 # OS
 .DS_Store
 Thumbs.db
+
+# Deploy — third-party proxy binary (install via winget; see deploy/README.md)
+deploy/caddy.exe
+# Deploy — generated frontend build served by FastAPI
+frontend/dist/

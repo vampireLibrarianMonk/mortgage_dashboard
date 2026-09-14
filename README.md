@@ -149,6 +149,24 @@ Just start filling in numbers and the results will update automatically.
 
 ---
 
+## Always-On Local Hosting (Windows)
+
+Want the app to come up automatically on every boot at a friendly URL like
+**http://app.mortgage-dashboard/** (no port, no manually starting servers)?
+
+The `deploy/` folder contains a registry-driven setup that:
+
+- Serves the built frontend **and** API from FastAPI on a single high port (9001)
+- Runs a **Caddy** reverse proxy on port 80 that routes `app.mortgage-dashboard` → the app
+- Maps the hostname locally via the Windows hosts file
+- Starts everything at boot (before login) via Task Scheduler
+
+It's designed to host multiple local apps side by side — each gets its own
+`app.<name>` hostname and its own port in the 9000s band. See **[`deploy/README.md`](deploy/README.md)**
+for the full setup, adding new apps, and teardown steps.
+
+---
+
 ## Using the App
 
 ### Choosing Your Mode

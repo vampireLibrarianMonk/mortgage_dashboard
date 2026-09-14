@@ -1,0 +1,9 @@
+﻿# AUTO-GENERATED from deploy/apps.json by generate-caddyfile.ps1.
+# Do not edit by hand; edit apps.json and re-run the generator.
+{
+	admin off
+}
+
+http://app.mortgage-dashboard:80 {
+	reverse_proxy 127.0.0.1:9001
+}
