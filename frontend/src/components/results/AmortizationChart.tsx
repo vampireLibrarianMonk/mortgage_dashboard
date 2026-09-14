@@ -1,6 +1,5 @@
 import { useState, useCallback } from "react";
 import {
-  AreaChart,
   Area,
   XAxis,
   YAxis,
