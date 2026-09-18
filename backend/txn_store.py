@@ -41,6 +41,10 @@ CATEGORIES = [
     # "Other Home Costs" holds annual/one-off home expenses (contractor jobs,
     # appliances). Reimbursements (negative amounts) filed here net the cost down.
     "Other Home Costs",
+    # "Split" marks a transaction that has been itemized into per-item children
+    # (see split_transaction). The parent is a container only: its own amount is
+    # excluded from actuals and the children carry the real categories/amounts.
+    "Split",
     "Income", "Transfer", "Ignore",
     # "Review" parks transactions the user wants to revisit (unclear/worrying
     # items) so they stay visible instead of being filed into a budget bucket.
@@ -331,4 +335,85 @@ def undo() -> bool:
     txns, rules = _UNDO_STACK.pop()
     save_transactions(txns)
     save_rules(rules)
+    return True
+
+
+# --- Transaction splitting ----------------------------------------------------
+#
+# A single payment is often a basket that crosses budget categories (a Walmart
+# order with groceries + a tool + a toy). Splitting turns one transaction into a
+# parent "container" plus per-item children. The parent keeps the real money
+# movement and dedup identity but is categorized "Split" so its own amount is
+# excluded from actuals; each child carries a slice of the amount and its own
+# category, and the children sum to the parent. This mirrors how offset/transfer
+# rows are kept out of budget spend, but with itemized detail underneath.
+
+SPLIT_CATEGORY = "Split"
+
+# How close child amounts must sum to the parent to be accepted (float cents).
+_SPLIT_TOLERANCE = 0.01
+
+
+def _normalize_children(children: list[dict]) -> list[dict]:
+    """Validate/normalize split children. Each child: {amount, category, note?}."""
+    out: list[dict] = []
+    for c in children:
+        if "amount" not in c or "category" not in c:
+            raise ValueError("each split child needs 'amount' and 'category'")
+        cat = str(c["category"]).strip()
+        if cat not in CATEGORIES:
+            raise ValueError(f"unknown category '{cat}' in split child")
+        out.append({
+            "amount": round(float(c["amount"]), 2),
+            "category": cat,
+            "note": str(c.get("note", "")).strip(),
+        })
+    return out
+
+
+def split_transaction(transaction_id: str, children: list[dict]) -> dict:
+    """Itemize one transaction into per-item children.
+
+    The children's amounts must sum to the parent's amount (within a cent). On
+    success the parent is marked category "Split" and gains a `split_children`
+    list; its year/month/amount are untouched so it still reconciles and dedups.
+    Returns the updated parent. Raises ValueError on a bad sum / unknown category
+    / missing transaction. Caller is responsible for snapshot() (undo support).
+    """
+    kids = _normalize_children(children)
+    if not kids:
+        raise ValueError("a split needs at least one child")
+
+    txns = load_transactions()
+    by_id = {t["transaction_id"]: t for t in txns}
+    parent = by_id.get(transaction_id)
+    if parent is None:
+        raise ValueError(f"no transaction '{transaction_id}'")
+
+    parent_amt = round(float(parent["amount"]), 2)
+    child_sum = round(sum(c["amount"] for c in kids), 2)
+    if abs(child_sum - parent_amt) > _SPLIT_TOLERANCE:
+        raise ValueError(
+            f"split children sum to {child_sum:.2f} but transaction is {parent_amt:.2f}"
+        )
+
+    parent["category"] = SPLIT_CATEGORY
+    parent["split_children"] = kids
+    save_transactions(txns)
+    return parent
+
+
+def unsplit_transaction(transaction_id: str, category: str = "Uncategorized") -> bool:
+    """Remove a split, restoring the transaction to a single category.
+
+    Returns False if the transaction is not split. Caller handles snapshot().
+    """
+    txns = load_transactions()
+    by_id = {t["transaction_id"]: t for t in txns}
+    parent = by_id.get(transaction_id)
+    if parent is None or not parent.get("split_children"):
+        return False
+    parent.pop("split_children", None)
+    parent["category"] = category if category in CATEGORIES else "Uncategorized"
+    save_transactions(txns)
     return True

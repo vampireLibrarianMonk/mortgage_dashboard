@@ -29,6 +29,21 @@ def actuals_path() -> Path:
     return Path(__file__).resolve().parent / "plaid_actuals.json"
 
 
+def _category_amounts(t: dict):
+    """Yield (category, amount) lines a transaction contributes to actuals.
+
+    A normal transaction contributes one line (its own category + amount). A
+    *split* transaction (category "Split" with split_children) contributes one
+    line per child - so an itemized order lands in the children's categories, not
+    the parent container, without double-counting.
+    """
+    if t.get("category") == "Split" and t.get("split_children"):
+        for child in t["split_children"]:
+            yield child.get("category"), float(child.get("amount", 0.0))
+    else:
+        yield t.get("category"), float(t.get("amount", 0.0))
+
+
 def export_actuals(txns: list[dict]) -> None:
     """Write plaid_actuals.json (aggregates only) from user-categorized txns."""
     by_month = defaultdict(lambda: defaultdict(float))
@@ -37,13 +52,13 @@ def export_actuals(txns: list[dict]) -> None:
     for t in txns:
         y = int(t["year"])
         mk = f"{y:04d}-{int(t['month']):02d}"
-        c = t["category"]
-        if c in BUDGET_CATEGORIES:
-            by_month[mk][c] += t["amount"]
-            by_year[str(y)][c] += t["amount"]
-        elif c in UNBUDGETED:
-            um[mk] += t["amount"]
-            uy[str(y)] += t["amount"]
+        for c, amt in _category_amounts(t):
+            if c in BUDGET_CATEGORIES:
+                by_month[mk][c] += amt
+                by_year[str(y)][c] += amt
+            elif c in UNBUDGETED:
+                um[mk] += amt
+                uy[str(y)] += amt
 
     def cats(d):
         return {c: round(d.get(c, 0.0), 2) for c in BUDGET_CATEGORIES}
