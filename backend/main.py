@@ -79,18 +79,29 @@ def healthz():
 _DIST_DIR = (Path(__file__).resolve().parent.parent / "frontend" / "dist")
 
 if _DIST_DIR.is_dir():
+    _DIST_ROOT = _DIST_DIR.resolve()
+    _INDEX_HTML = _DIST_ROOT / "index.html"
     _ASSETS_DIR = _DIST_DIR / "assets"
     if _ASSETS_DIR.is_dir():
         app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
 
     @app.get("/")
     def _serve_index():
-        return FileResponse(_DIST_DIR / "index.html")
+        return FileResponse(_INDEX_HTML)
 
     @app.get("/{full_path:path}")
     def _serve_spa(full_path: str):
-        """Serve real static files if present, else fall back to index.html (SPA routing)."""
-        candidate = _DIST_DIR / full_path
-        if candidate.is_file():
+        """Serve a real static file if it exists inside dist, else fall back to
+        index.html (SPA client-side routing).
+
+        Security: the candidate path is resolved and confirmed to live INSIDE the
+        dist directory before serving. Without this, a crafted request such as
+        `GET /..%2F..%2F.env` (whose double-encoded traversal slips past the
+        router's normalization) would resolve outside dist and disclose arbitrary
+        readable files (e.g. the .env with Plaid secrets). Any path that escapes
+        dist falls through to index.html.
+        """
+        candidate = (_DIST_ROOT / full_path).resolve()
+        if candidate.is_file() and candidate.is_relative_to(_DIST_ROOT):
             return FileResponse(candidate)
-        return FileResponse(_DIST_DIR / "index.html")
+        return FileResponse(_INDEX_HTML)
