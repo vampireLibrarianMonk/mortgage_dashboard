@@ -1,21 +1,15 @@
-import pytest
+from calculations import calculate
 from models import (
     CalculateRequest,
-    HousePurchase,
-    LoanTerms,
-    TaxAndCost,
-    HouseholdExpenses,
-    VehicleExpenses,
-    CollegeSavings,
     ExtraPrincipal,
-    RecurringExtraPrincipal,
-    LumpSumPayment,
     ExtraPrincipalFrequency,
+    HousePurchase,
     IncomeRow,
-    ExpenseRow,
     InputMode,
+    LoanTerms,
+    LumpSumPayment,
+    RecurringExtraPrincipal,
 )
-from calculations import calculate
 
 
 def _basic_request(**overrides) -> CalculateRequest:
