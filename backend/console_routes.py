@@ -74,6 +74,7 @@ def _cmd_help(_args) -> list[str]:
         "  label <match text> = <label> [$amt]  attach a note to matching txns",
         "  summary [year]                    per-category totals; refresh Budget vs Actual",
         "  import [go]                       preview (or `go` to load) statement files in dump/",
+        "  orders [go]                       preview (or `go` to apply) order-PDF splits in dump/",
         "  undo                              revert the last change",
         "  plaid [status|items|balances|link]  Plaid diagnostics (no GUI panel)",
         f"  categories: {', '.join(ts.CATEGORIES)}",
@@ -423,6 +424,116 @@ def _cmd_import(args) -> list[str]:
     return lines
 
 
+def _cmd_orders(args) -> list[str]:
+    """Itemize transactions from order-details PDFs staged in dump/.
+
+    Usage:
+      orders                preview: file each order PDF into processed_document/,
+                            match it to a stored transaction, and show the split
+                            it would apply (writes no split - dry run)
+      orders go             apply the ready splits (snapshots first; `undo` reverts)
+
+    Drop the retailer "Order details" PDFs (Walmart, Amazon, ...) into dump/. The
+    vendor is detected automatically. Each order is matched to the transaction it
+    paid for (by total + date) and split into per-item categories; shipping/tax
+    are distributed across items so the split sums to the transaction total. Item
+    categories come from your merchant rules (matched on item name), so this
+    learns as you categorize.
+    """
+    from importers import orders as orders_mod
+    from importers import order_service
+
+    repo = Path(__file__).resolve().parent.parent
+    dump_dir = repo / "dump"
+    processed_root = repo / "processed_document"
+    if not dump_dir.is_dir():
+        return [f"no dump directory at {dump_dir}"]
+
+    do_commit = bool(args) and args[0].lower() in ("go", "commit", "apply", "confirm")
+
+    # Read order PDFs from dump/ (skip PayPal statements + non-order files).
+    order_details = []
+    lines: list[str] = []
+    seen_any = False
+    for p in sorted(dump_dir.iterdir()):
+        if not p.is_file() or p.suffix.lower() != ".pdf" or p.name.startswith("statement-"):
+            continue
+        data = p.read_bytes()
+        reader = orders_mod.order_reader_for(p.name, data)
+        if reader is None:
+            continue  # not an order doc we recognize
+        seen_any = True
+        # File it into processed_document/<slug>/ (raw + renamed), then plan.
+        res = orders_mod.process_order_file(p, processed_root)
+        if res.status != "processed":
+            lines.append(f"  {p.name}: {res.status}"
+                         + (f" ({'; '.join(res.warnings)})" if res.warnings else ""))
+            continue
+        order_details.append((p, res))
+
+    if not seen_any:
+        return [f"no order-details PDFs in {dump_dir} "
+                "(drop a Walmart/Amazon 'Order details' PDF there)"]
+
+    lines.insert(0, f"found {len(order_details)} order(s) to itemize:")
+
+    # `orders go` applies high-confidence (vendor-named) matches. Add `confirm`
+    # (`orders go confirm`) to also apply amount+date-only matches (needs-confirm).
+    include_unconfirmed = len(args) > 1 and args[1].lower() in ("confirm", "force", "all")
+
+    ready_plans, confirm_plans = [], []
+    for p, res in order_details:
+        order = res.order
+        plan = order_service.plan_split(order)
+        lines.append("")
+        lines.append(f"{res.slug or p.name}  [{plan.status}]")
+        if plan.status in ("ready", "needs-confirm"):
+            m = plan.matched_txn
+            lines.append(f"  -> {m['date']} {_fmt(m['amount'])} {m.get('name','')[:24]} "
+                         f"(split into {len(plan.children)} item(s)):")
+            for ch in plan.children:
+                lines.append(f"       {_fmt(ch.amount):>11}  {ch.category:12} {ch.note[:40]}")
+            if plan.status == "ready":
+                ready_plans.append(plan)
+            else:
+                confirm_plans.append(plan)
+                lines.append(f"     (matched by amount+date only - `orders go confirm` to apply)")
+        elif plan.status == "ambiguous":
+            lines.append(f"  ! {len(plan.candidates)} transactions match ${order.total:.2f} - "
+                         "resolve manually:")
+            for c in plan.candidates:
+                lines.append(f"       {c['date']} {_fmt(c['amount'])} {c.get('name','')[:24]} "
+                             f"(id {c['transaction_id'][:12]})")
+        else:
+            lines.append(f"  ! {'; '.join(plan.warnings) or plan.status}")
+
+    to_apply = ready_plans + (confirm_plans if include_unconfirmed else [])
+    if do_commit:
+        lines.append("")
+        if not to_apply:
+            lines.append("nothing ready to apply."
+                         + (f" ({len(confirm_plans)} need `orders go confirm`)" if confirm_plans else ""))
+        else:
+            lines.append("applying splits...")
+            for plan in to_apply:
+                try:
+                    order_service.apply_split(plan)
+                    lines.append(f"  split {plan.order.vendor} ${plan.order.total:.2f} "
+                                 f"into {len(plan.children)} item(s)")
+                except Exception as e:  # noqa: BLE001
+                    lines.append(f"  error splitting {plan.order.vendor} "
+                                 f"${plan.order.total:.2f}: {e}")
+            lines.append("done. `list Uncategorized` to categorize items, "
+                         "`summary` to refresh, `undo` to revert.")
+    else:
+        lines.append("")
+        msg = f"dry run - no splits written. {len(ready_plans)} ready"
+        if confirm_plans:
+            msg += f", {len(confirm_plans)} need confirm"
+        lines.append(msg + ". run `orders go` to apply.")
+    return lines
+
+
 def _cmd_undo(_args) -> list[str]:
     return ["reverted last change." if ts.undo() else "nothing to undo."]
 
@@ -534,7 +645,7 @@ DISPATCH = {
     "merchants": _cmd_merchants, "cat": _cmd_cat, "set": _cmd_set, "rule": _cmd_rule,
     "label": _cmd_label,
     "summary": _cmd_summary, "undo": _cmd_undo, "plaid": _cmd_plaid,
-    "import": _cmd_import,
+    "import": _cmd_import, "orders": _cmd_orders,
 }
 
 
@@ -637,3 +748,92 @@ async def import_commit(file: UploadFile = File(...)):
     preview = service.preview_files(files)
     summary = service.commit(preview)
     return {"ok": True, "preview": _preview_to_dict(preview), "summary": summary}
+
+
+# --- Order-details split (GUI upload) -----------------------------------------
+#
+# Upload a retailer "Order details" PDF; the vendor reader is detected
+# automatically, the order is matched to a stored transaction, and a per-item
+# split is proposed. /orders/preview shows the plan (writes nothing);
+# /orders/commit files the PDF into processed_document/ and applies the split.
+
+
+def _order_plan_to_dict(plan) -> dict:
+    """Serialize an OrderSplitPlan for the frontend."""
+    o = plan.order
+    return {
+        "vendor": o.vendor,
+        "order_no": o.order_no,
+        "date": o.date.isoformat() if o.date else None,
+        "total": o.total,
+        "status": plan.status,
+        "warnings": plan.warnings,
+        "matched": None if not plan.matched_txn else {
+            "transaction_id": plan.matched_txn["transaction_id"],
+            "date": plan.matched_txn.get("date"),
+            "amount": plan.matched_txn.get("amount"),
+            "name": plan.matched_txn.get("name"),
+        },
+        "children": [
+            {"amount": c.amount, "category": c.category, "note": c.note}
+            for c in plan.children
+        ],
+        "candidates": [
+            {"transaction_id": c["transaction_id"], "date": c.get("date"),
+             "amount": c.get("amount"), "name": c.get("name")}
+            for c in plan.candidates
+        ],
+    }
+
+
+@router.post("/orders/preview")
+async def orders_preview(file: UploadFile = File(...)):
+    """Parse an uploaded order-details PDF and return the proposed split (no write)."""
+    from importers import orders as orders_mod
+    from importers import order_service
+
+    try:
+        name, data = await _read_upload(file)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    order = orders_mod.read_order(name, data)
+    if order is None:
+        return {"ok": False, "error": "no order reader recognized this PDF"}
+    plan = order_service.plan_split(order)
+    return {"ok": True, "plan": _order_plan_to_dict(plan)}
+
+
+@router.post("/orders/commit")
+async def orders_commit(file: UploadFile = File(...)):
+    """File an uploaded order PDF into processed_document/ and apply its split."""
+    from importers import orders as orders_mod
+    from importers import order_service
+
+    try:
+        name, data = await _read_upload(file)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    order = orders_mod.read_order(name, data)
+    if order is None:
+        return {"ok": False, "error": "no order reader recognized this PDF"}
+    plan = order_service.plan_split(order)
+    # ready (vendor-named) and needs-confirm (amount+date match) are both
+    # applicable - a GUI commit is the user's explicit confirmation. no-match /
+    # ambiguous / no-total cannot be auto-applied.
+    if plan.status not in ("ready", "needs-confirm"):
+        return {"ok": False, "plan": _order_plan_to_dict(plan),
+                "error": f"cannot apply: {plan.status}"}
+
+    # File the raw PDF into processed_document/<slug>/ for provenance, then split.
+    repo = Path(__file__).resolve().parent.parent
+    tmp = repo / "dump" / f"_upload_{name}"
+    try:
+        tmp.write_bytes(data)
+        orders_mod.process_order_file(tmp, repo / "processed_document")
+    finally:
+        tmp.unlink(missing_ok=True)
+
+    _log(f"orders/commit {name}")
+    order_service.apply_split(plan)
+    return {"ok": True, "plan": _order_plan_to_dict(plan),
+            "summary": [f"split {order.vendor} ${order.total:.2f} into {len(plan.children)} item(s)"]}

@@ -3,7 +3,10 @@ import {
   runConsole,
   previewStatement,
   commitStatement,
+  previewOrder,
+  commitOrder,
   type ImportPreview,
+  type OrderPlan,
 } from "../api";
 
 interface Line {
@@ -39,6 +42,27 @@ function previewLines(pv: ImportPreview): Line[] {
   return out;
 }
 
+// Render an order-split plan into console scrollback lines.
+function orderPlanLines(plan: OrderPlan): Line[] {
+  const out: Line[] = [];
+  const t = plan.total != null ? fmt(plan.total) : "?";
+  out.push({ kind: "output", text: `${plan.vendor} order ${t}  [${plan.status}]` });
+  if (plan.matched && (plan.status === "ready" || plan.status === "needs-confirm")) {
+    const m = plan.matched;
+    out.push({
+      kind: "output",
+      text: `  -> ${m.date} ${fmt(m.amount ?? 0)} ${(m.name ?? "").slice(0, 24)} (split into ${plan.children.length} item(s)):`,
+    });
+    for (const c of plan.children)
+      out.push({ kind: "output", text: `       ${fmt(c.amount).padStart(11)}  ${c.category.padEnd(12)} ${c.note.slice(0, 40)}` });
+  } else if (plan.status === "ambiguous") {
+    out.push({ kind: "error", text: `  ! ${plan.candidates.length} transactions match ${t} - resolve in the console` });
+  } else {
+    for (const w of plan.warnings) out.push({ kind: "error", text: `  ! ${w}` });
+  }
+  return out;
+}
+
 const BANNER: Line[] = [
   { kind: "output", text: "mortgage-dashboard console" },
   { kind: "output", text: "user-driven bank sync + categorization. type 'help' for commands." },
@@ -53,10 +77,13 @@ export default function Console() {
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
   // A statement file the user picked, held until they confirm the import.
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  // An order-details PDF picked, held (with its plan) until confirm.
+  const [pendingOrder, setPendingOrder] = useState<File | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const orderRef = useRef<HTMLInputElement>(null);
 
   function pushLines(newLines: Line[]) {
     setLines((prev) => [...prev, ...newLines]);
@@ -118,6 +145,62 @@ export default function Console() {
   function cancelImport() {
     setPendingFile(null);
     pushLines([{ kind: "output", text: "import cancelled." }]);
+  }
+
+  // Order-details PDF: preview the split plan (writes nothing).
+  async function onOrderPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    pushLines([{ kind: "input", text: `$ orders ${file.name}` }]);
+    setBusy(true);
+    try {
+      const res = await previewOrder(file);
+      if (!res.ok || !res.plan) {
+        pushLines([{ kind: "error", text: `error: ${res.error ?? "preview failed"}` }]);
+        setPendingOrder(null);
+        return;
+      }
+      pushLines(orderPlanLines(res.plan));
+      if (res.plan.status === "ready" || res.plan.status === "needs-confirm") {
+        setPendingOrder(file);
+        pushLines([{ kind: "output", text: "" }, { kind: "output", text: "review the split above, then confirm below." }]);
+      } else {
+        setPendingOrder(null);
+      }
+    } catch (err) {
+      pushLines([{ kind: "error", text: `error: ${err instanceof Error ? err.message : String(err)}` }]);
+      setPendingOrder(null);
+    } finally {
+      setBusy(false);
+      setTimeout(focusInput, 0);
+    }
+  }
+
+  async function confirmOrder() {
+    if (!pendingOrder) return;
+    pushLines([{ kind: "input", text: `$ orders ${pendingOrder.name} --commit` }]);
+    setBusy(true);
+    try {
+      const res = await commitOrder(pendingOrder);
+      if (!res.ok) {
+        pushLines([{ kind: "error", text: `error: ${res.error ?? "commit failed"}` }]);
+        return;
+      }
+      pushLines((res.summary ?? []).map((text) => ({ kind: "output" as const, text: `  ${text}` })));
+      pushLines([{ kind: "output", text: "done. `list Uncategorized` to categorize items, `summary` to refresh, `undo` to revert." }]);
+    } catch (err) {
+      pushLines([{ kind: "error", text: `error: ${err instanceof Error ? err.message : String(err)}` }]);
+    } finally {
+      setPendingOrder(null);
+      setBusy(false);
+      setTimeout(focusInput, 0);
+    }
+  }
+
+  function cancelOrder() {
+    setPendingOrder(null);
+    pushLines([{ kind: "output", text: "order split cancelled." }]);
   }
 
   // Keep the view pinned to the newest output.
@@ -216,6 +299,16 @@ export default function Console() {
             Cancel
           </button>
         </div>
+      ) : pendingOrder ? (
+        <div className="console-confirmbar" onClick={(e) => e.stopPropagation()}>
+          <span className="console-confirm-label">Apply this split from {pendingOrder.name}?</span>
+          <button className="console-btn console-btn-primary" disabled={busy} onClick={confirmOrder}>
+            Confirm split
+          </button>
+          <button className="console-btn" disabled={busy} onClick={cancelOrder}>
+            Cancel
+          </button>
+        </div>
       ) : (
         <div className="console-toolbar" onClick={(e) => e.stopPropagation()}>
           <button
@@ -226,12 +319,27 @@ export default function Console() {
           >
             Import statement...
           </button>
+          <button
+            className="console-btn"
+            disabled={busy}
+            onClick={() => orderRef.current?.click()}
+            title="Upload a Walmart/Amazon 'Order details' PDF to itemize the matching transaction"
+          >
+            Import order...
+          </button>
           <input
             ref={fileRef}
             type="file"
             accept=".zip,.pdf,.csv"
             style={{ display: "none" }}
             onChange={onFilePicked}
+          />
+          <input
+            ref={orderRef}
+            type="file"
+            accept=".pdf"
+            style={{ display: "none" }}
+            onChange={onOrderPicked}
           />
         </div>
       )}

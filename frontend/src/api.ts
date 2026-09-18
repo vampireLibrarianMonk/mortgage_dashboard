@@ -158,3 +158,53 @@ export function previewStatement(file: File): Promise<ImportResult> {
 export function commitStatement(file: File): Promise<ImportResult> {
   return postStatement("/import/commit", file);
 }
+
+// --- Order-details split (upload a Walmart/Amazon "Order details" PDF) ---
+
+export interface OrderMatchedTxn {
+  transaction_id: string;
+  date: string | null;
+  amount: number | null;
+  name: string | null;
+}
+
+export interface OrderSplitChild {
+  amount: number;
+  category: string;
+  note: string;
+}
+
+export interface OrderPlan {
+  vendor: string;
+  order_no: string | null;
+  date: string | null;
+  total: number | null;
+  status: string; // ready | needs-confirm | no-match | ambiguous | no-total
+  warnings: string[];
+  matched: OrderMatchedTxn | null;
+  children: OrderSplitChild[];
+  candidates: OrderMatchedTxn[];
+}
+
+export interface OrderResult {
+  ok: boolean;
+  error?: string;
+  plan?: OrderPlan;
+  summary?: string[];
+}
+
+async function postOrder(path: string, file: File): Promise<OrderResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/console${path}`, { method: "POST", body: form });
+  if (!res.ok) throw new Error(`Order import failed: ${res.status}`);
+  return res.json();
+}
+
+export function previewOrder(file: File): Promise<OrderResult> {
+  return postOrder("/orders/preview", file);
+}
+
+export function commitOrder(file: File): Promise<OrderResult> {
+  return postOrder("/orders/commit", file);
+}
