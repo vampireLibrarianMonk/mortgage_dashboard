@@ -881,3 +881,83 @@ h4 {
   border-color: #4caf50;
   color: #cdeccd;
 }
+
+/* --- Banks page (Plaid connect) --- */
+.banks-page {
+  max-width: 640px;
+  margin: 1.5rem auto;
+  padding: 0 1rem;
+}
+.bank-manager h2 {
+  margin-bottom: 0.25rem;
+}
+.bank-env {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 0;
+}
+.bank-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 1.5rem;
+}
+.bank-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  background: #0d1220;
+}
+.bank-name {
+  font-weight: 600;
+}
+.bank-slug {
+  color: var(--muted);
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+.bank-empty {
+  color: var(--muted);
+}
+.bank-connect {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+.bank-hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.bank-connect-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.bank-input {
+  flex: 1;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0b0e17;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.bank-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid #4caf50;
+  background: #16351f;
+  color: #cdeccd;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.bank-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.bank-msg {
+  color: #7fd18a;
+  font-size: 0.88rem;
+}

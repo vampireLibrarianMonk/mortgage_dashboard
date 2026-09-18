@@ -208,3 +208,45 @@ export function previewOrder(file: File): Promise<OrderResult> {
 export function commitOrder(file: File): Promise<OrderResult> {
   return postOrder("/orders/commit", file);
 }
+
+// --- Plaid: connect additional banks (link flow) ---
+
+export interface PlaidStatus {
+  configured: boolean;
+  env: string;
+}
+
+export interface PlaidItem {
+  slug: string;
+  name: string;
+}
+
+export async function plaidStatus(): Promise<PlaidStatus> {
+  const res = await fetch(`${API_BASE}/plaid/status`);
+  if (!res.ok) throw new Error(`Plaid status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function plaidItems(): Promise<PlaidItem[]> {
+  const res = await fetch(`${API_BASE}/plaid/items`);
+  if (!res.ok) throw new Error(`Plaid items failed: ${res.status}`);
+  const data = await res.json();
+  return (data.items ?? data ?? []) as PlaidItem[];
+}
+
+export async function createLinkToken(): Promise<string> {
+  const res = await fetch(`${API_BASE}/plaid/link-token`, { method: "POST" });
+  if (!res.ok) throw new Error(`link-token failed: ${res.status}`);
+  const data = await res.json();
+  return data.link_token as string;
+}
+
+export async function exchangePublicToken(publicToken: string, name: string): Promise<PlaidItem> {
+  const res = await fetch(`${API_BASE}/plaid/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ public_token: publicToken, name }),
+  });
+  if (!res.ok) throw new Error(`exchange failed: ${res.status}`);
+  return res.json();
+}

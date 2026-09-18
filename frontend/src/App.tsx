@@ -13,6 +13,7 @@ import AdditionalExpenses from "./components/inputs/AdditionalExpenses";
 import TakeHomePay from "./components/inputs/TakeHomePay";
 import ExtraPrincipalSection from "./components/inputs/ExtraPrincipal";
 import Console from "./components/Console";
+import BankManager from "./components/BankManager";
 import ResultsPanel from "./components/results/ResultsPanel";
 import PrintReport from "./components/results/PrintReport";
 import ProfileManager from "./components/ProfileManager";
@@ -30,7 +31,7 @@ export type MakeMD = (key: string, defaultClass: Classification) => MDProps;
 function App() {
   const { state, dispatch, result, loading, error } = useCalculation();
   const [profileAddress, setProfileAddress] = useState("");
-  const [page, setPage] = useState<"dashboard" | "console">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "console" | "banks">("dashboard");
 
   const setField = (section: keyof CalculateRequest) => (field: string, value: unknown) => {
     dispatch({ type: "SET_FIELD", section, field, value });
@@ -88,6 +89,13 @@ function App() {
           >
             Console
           </button>
+          <button
+            type="button"
+            className={page === "banks" ? "page-tab active" : "page-tab"}
+            onClick={() => setPage("banks")}
+          >
+            Banks
+          </button>
         </nav>
         {page === "dashboard" && result && (
           <button type="button" className="print-btn" onClick={handlePrint}>
@@ -99,6 +107,10 @@ function App() {
       {page === "console" ? (
         <main className="console-page">
           <Console />
+        </main>
+      ) : page === "banks" ? (
+        <main className="banks-page">
+          <BankManager />
         </main>
       ) : (
         <>
