@@ -1,0 +1,12 @@
+# Development / pre-commit tooling (not needed at runtime).
+# Install with:  venv\Scripts\pip install -r requirements-dev.txt
+pytest==8.3.3           # test runner (see note below re: PYSEC-2026-1845)
+bandit==1.7.10          # Python SAST (security linter)
+pip-audit==2.7.3        # dependency vulnerability audit (PyPI advisories)
+detect-secrets==1.5.0   # secret scanning (baseline-driven)
+ruff==0.6.9             # fast lint (style + common bug classes)
+
+# NOTE: pytest 8.3.3 has advisory PYSEC-2026-1845 (fix 9.0.3). It is a
+# test-only dependency (never ships, never runs in production), so the practical
+# risk is nil. Left pinned at 8.3.3 for now to avoid churn in the test suite;
+# bump to 9.0.3 when convenient.

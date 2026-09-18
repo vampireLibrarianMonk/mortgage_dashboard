@@ -1,0 +1,34 @@
+# Tooling config for the backend. Runtime deps live in requirements.txt; dev/scan
+# tools in requirements-dev.txt. This file only configures linters/scanners and
+# pytest — it does not turn the backend into an installable package.
+
+[tool.ruff]
+# Lint the application code only; never the vendored virtualenv or caches.
+extend-exclude = ["venv", ".venv", "__pycache__", ".pytest_cache"]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+# A pragmatic, security-aware rule set:
+#   E/F  pyflakes + pycodestyle (real bugs, undefined names, unused imports)
+#   B    flake8-bugbear (likely bugs)
+#   S    flake8-bandit (security anti-patterns, overlaps bandit as a fast gate)
+#   I    import sorting
+#   UP   pyupgrade (modern syntax)
+select = ["E", "F", "B", "S", "I", "UP"]
+# E501 (line length) is advisory here; formatting is not the goal of this pass.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may use assert (S101) and hard-coded test values.
+"tests/*" = ["S101"]
+
+[tool.bandit]
+# Bandit scans for security issues; exclude the vendored venv and tests.
+exclude_dirs = ["venv", ".venv", "tests", "__pycache__", ".pytest_cache"]
+
+[tool.pytest.ini_options]
+# Tests import backend modules by bare name (e.g. `import calculations`), so run
+# from the backend/ dir. testpaths keeps discovery scoped and out of venv.
+testpaths = ["tests"]
+python_files = ["test_*.py"]
