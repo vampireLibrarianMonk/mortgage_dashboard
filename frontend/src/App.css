@@ -846,3 +846,38 @@ h4 {
 .console-input::placeholder {
   color: var(--muted);
 }
+.console-toolbar,
+.console-confirmbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem;
+  border-top: 1px solid var(--border);
+  background: #0d1220;
+}
+.console-confirm-label {
+  color: var(--text);
+  margin-right: auto;
+}
+.console-btn {
+  background: #1a2133;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.console-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.console-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.console-btn-primary {
+  background: #16351f;
+  border-color: #4caf50;
+  color: #cdeccd;
+}

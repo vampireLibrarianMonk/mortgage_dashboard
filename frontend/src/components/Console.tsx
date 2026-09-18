@@ -1,9 +1,42 @@
 import { useEffect, useRef, useState } from "react";
-import { runConsole } from "../api";
+import {
+  runConsole,
+  previewStatement,
+  commitStatement,
+  type ImportPreview,
+} from "../api";
 
 interface Line {
   kind: "input" | "output" | "error";
   text: string;
+}
+
+function fmt(n: number): string {
+  return `$${n.toFixed(2)}`;
+}
+
+// Render an import preview into console scrollback lines.
+function previewLines(pv: ImportPreview): Line[] {
+  const out: Line[] = [];
+  for (const f of pv.files) {
+    if (f.error) out.push({ kind: "error", text: `  ${f.filename}: ${f.error}` });
+    else out.push({ kind: "output", text: `  ${f.filename}: ${f.count} transaction(s) via ${f.reader}` });
+  }
+  for (const p of pv.problems) out.push({ kind: "error", text: `  ! ${p}` });
+  out.push({ kind: "output", text: "" });
+  out.push({ kind: "output", text: `would import ${pv.import_count} transaction(s) on/after ${pv.data_start}:` });
+  for (const r of pv.to_import) {
+    const tag = r.category === "Ignore" ? "  [offset->Ignore]" : "";
+    out.push({ kind: "output", text: `  ${r.date}  ${fmt(r.amount).padStart(11)}  ${r.name.slice(0, 44)}${tag}` });
+  }
+  if (pv.pre_start_count > 0)
+    out.push({ kind: "output", text: `excluding ${pv.pre_start_count} transaction(s) before data start ${pv.data_start} (partial history)` });
+  if (pv.reconciled.length > 0) {
+    out.push({ kind: "output", text: `reconciling ${pv.reconciled.length} opaque 'PAYPAL PURCHASE' bank row(s) -> Ignore:` });
+    for (const m of pv.reconciled)
+      out.push({ kind: "output", text: `  ${m.date}  ${fmt(m.amount).padStart(11)}  ${m.name.slice(0, 40)}` });
+  }
+  return out;
 }
 
 const BANNER: Line[] = [
@@ -18,9 +51,74 @@ export default function Console() {
   const [busy, setBusy] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState<number | null>(null);
+  // A statement file the user picked, held until they confirm the import.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function pushLines(newLines: Line[]) {
+    setLines((prev) => [...prev, ...newLines]);
+  }
+
+  // Step 1: user picked a file -> preview it (writes nothing on the server).
+  async function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file later
+    if (!file) return;
+    pushLines([{ kind: "input", text: `$ import ${file.name}` }]);
+    setBusy(true);
+    try {
+      const res = await previewStatement(file);
+      if (!res.ok || !res.preview) {
+        pushLines([{ kind: "error", text: `error: ${res.error ?? "preview failed"}` }]);
+        setPendingFile(null);
+        return;
+      }
+      pushLines(previewLines(res.preview));
+      if (res.preview.import_count > 0) {
+        setPendingFile(file);
+        pushLines([{ kind: "output", text: "" }, { kind: "output", text: "review above, then confirm the import below." }]);
+      } else {
+        setPendingFile(null);
+        pushLines([{ kind: "output", text: "nothing to import." }]);
+      }
+    } catch (err) {
+      pushLines([{ kind: "error", text: `error: ${err instanceof Error ? err.message : String(err)}` }]);
+      setPendingFile(null);
+    } finally {
+      setBusy(false);
+      setTimeout(focusInput, 0);
+    }
+  }
+
+  // Step 2: user confirmed -> commit the same file.
+  async function confirmImport() {
+    if (!pendingFile) return;
+    pushLines([{ kind: "input", text: `$ import ${pendingFile.name} --commit` }]);
+    setBusy(true);
+    try {
+      const res = await commitStatement(pendingFile);
+      if (!res.ok) {
+        pushLines([{ kind: "error", text: `error: ${res.error ?? "commit failed"}` }]);
+        return;
+      }
+      pushLines((res.summary ?? []).map((text) => ({ kind: "output" as const, text: `  ${text}` })));
+      pushLines([{ kind: "output", text: "done. run `summary` to refresh Budget vs Actual, `undo` to revert." }]);
+    } catch (err) {
+      pushLines([{ kind: "error", text: `error: ${err instanceof Error ? err.message : String(err)}` }]);
+    } finally {
+      setPendingFile(null);
+      setBusy(false);
+      setTimeout(focusInput, 0);
+    }
+  }
+
+  function cancelImport() {
+    setPendingFile(null);
+    pushLines([{ kind: "output", text: "import cancelled." }]);
+  }
 
   // Keep the view pinned to the newest output.
   useEffect(() => {
@@ -107,6 +205,37 @@ export default function Console() {
         ))}
         {busy && <div className="console-line console-output">working...</div>}
       </div>
+
+      {pendingFile ? (
+        <div className="console-confirmbar" onClick={(e) => e.stopPropagation()}>
+          <span className="console-confirm-label">Import {pendingFile.name}?</span>
+          <button className="console-btn console-btn-primary" disabled={busy} onClick={confirmImport}>
+            Confirm import
+          </button>
+          <button className="console-btn" disabled={busy} onClick={cancelImport}>
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="console-toolbar" onClick={(e) => e.stopPropagation()}>
+          <button
+            className="console-btn"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+            title="Upload a PayPal statement .zip or .pdf to preview and import"
+          >
+            Import statement...
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".zip,.pdf,.csv"
+            style={{ display: "none" }}
+            onChange={onFilePicked}
+          />
+        </div>
+      )}
+
       <div className="console-inputline">
         <span className="console-prompt">$</span>
         <input

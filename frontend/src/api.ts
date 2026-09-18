@@ -102,3 +102,59 @@ export async function runConsole(command: string): Promise<string[]> {
   const data = await res.json();
   return (data.output ?? []) as string[];
 }
+
+// --- Statement import (upload a PayPal statement zip/pdf) ---
+
+export interface ImportPreviewFile {
+  filename: string;
+  reader: string | null;
+  count: number;
+  error: string | null;
+}
+
+export interface ImportPreviewRow {
+  date: string;
+  amount: number;
+  name: string;
+  category: string | null;
+}
+
+export interface ImportReconcileRow {
+  date: string;
+  amount: number;
+  name: string;
+}
+
+export interface ImportPreview {
+  files: ImportPreviewFile[];
+  problems: string[];
+  import_count: number;
+  data_start: string;
+  to_import: ImportPreviewRow[];
+  pre_start_count: number;
+  offsets_count: number;
+  reconciled: ImportReconcileRow[];
+}
+
+export interface ImportResult {
+  ok: boolean;
+  error?: string;
+  preview?: ImportPreview;
+  summary?: string[];
+}
+
+async function postStatement(path: string, file: File): Promise<ImportResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/console${path}`, { method: "POST", body: form });
+  if (!res.ok) throw new Error(`Import failed: ${res.status}`);
+  return res.json();
+}
+
+export function previewStatement(file: File): Promise<ImportResult> {
+  return postStatement("/import/preview", file);
+}
+
+export function commitStatement(file: File): Promise<ImportResult> {
+  return postStatement("/import/commit", file);
+}
