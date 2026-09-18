@@ -5,3 +5,5 @@ pydantic==2.9.2
 httpx==0.27.2
 plaid-python==44.0.0
 cryptography==50.0.1
+pypdf==5.1.0
+python-multipart==0.0.20

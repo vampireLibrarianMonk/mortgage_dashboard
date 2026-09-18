@@ -26,7 +26,7 @@ import shlex
 from collections import defaultdict
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, UploadFile
 from pydantic import BaseModel
 
 import credential_store as store
@@ -73,6 +73,7 @@ def _cmd_help(_args) -> list[str]:
         "  rule ls | rule rm <pattern>       manage merchant rules",
         "  label <match text> = <label> [$amt]  attach a note to matching txns",
         "  summary [year]                    per-category totals; refresh Budget vs Actual",
+        "  import [go]                       preview (or `go` to load) statement files in dump/",
         "  undo                              revert the last change",
         "  plaid [status|items|balances|link]  Plaid diagnostics (no GUI panel)",
         f"  categories: {', '.join(ts.CATEGORIES)}",
@@ -350,6 +351,78 @@ def _cmd_summary(args) -> list[str]:
     return lines
 
 
+def _cmd_import(args) -> list[str]:
+    """Import statement files staged in the dump/ directory.
+
+    Usage:
+      import                preview what would be imported (dry run - writes nothing)
+      import go             perform the import (snapshots first, so `undo` reverts it)
+
+    Files are read from the repo `dump/` folder (drop the PayPal `statement-*.zip`
+    or the individual PDFs there). Parsing is handled by the pluggable importer
+    framework; the same preview/commit logic backs the GUI upload button.
+    """
+    from importers import service
+
+    dump_dir = Path(__file__).resolve().parent.parent / "dump"
+    if not dump_dir.is_dir():
+        return [f"no dump directory at {dump_dir}"]
+
+    # Gather stageable files (zips and pdfs), expanding zips into members.
+    staged: list[tuple[str, bytes]] = []
+    staged_names: list[str] = []
+    for p in sorted(dump_dir.iterdir()):
+        if not p.is_file() or p.name == ".gitkeep":
+            continue
+        if p.suffix.lower() not in (".zip", ".pdf", ".csv"):
+            continue
+        staged_names.append(p.name)
+        staged.extend(service.collect_files(p.name, p.read_bytes()))
+
+    if not staged:
+        return [f"no statement files in {dump_dir} (drop a PayPal statement-*.zip or .pdf there)"]
+
+    preview = service.preview_files(staged)
+
+    do_commit = bool(args) and args[0].lower() in ("go", "commit", "load", "confirm")
+
+    lines = [f"staged from dump/: {', '.join(staged_names)}"]
+    for pf in preview.files:
+        if pf.error:
+            lines.append(f"  {pf.filename}: ERROR {pf.error}")
+        else:
+            lines.append(f"  {pf.filename}: {len(pf.txns)} transaction(s) via {pf.reader}")
+    for prob in preview.problems:
+        lines.append(f"  ! {prob}")
+
+    lines.append("")
+    lines.append(f"would import {preview.import_count} transaction(s) on/after {service.DATA_START}:")
+    for r in preview.to_import[:LIST_CAP]:
+        tag = "  [offset->Ignore]" if r.get("category") == "Ignore" else ""
+        lines.append(f"  {r['date']}  {_fmt(r['amount']):>12}  {r['name'][:44]}{tag}")
+    if preview.import_count > LIST_CAP:
+        lines.append(f"  ... and {preview.import_count - LIST_CAP} more")
+
+    if preview.pre_start:
+        lines.append(f"excluding {len(preview.pre_start)} transaction(s) before data start "
+                     f"{service.DATA_START} (partial history, would skew budgets)")
+    if preview.reconciled:
+        lines.append(f"reconciling {len(preview.reconciled)} opaque 'PAYPAL PURCHASE' bank row(s) "
+                     f"-> Ignore (superseded by itemized detail):")
+        for m in preview.reconciled[:LIST_CAP]:
+            lines.append(f"  {m.paypal_date}  {_fmt(m.amount):>12}  {m.paypal_name[:40]}")
+
+    if do_commit:
+        lines.append("")
+        lines.append("committing...")
+        lines.extend(f"  {s}" for s in service.commit(preview))
+        lines.append("done. run `summary` to refresh Budget vs Actual, `undo` to revert.")
+    else:
+        lines.append("")
+        lines.append("dry run - nothing written. run `import go` to commit.")
+    return lines
+
+
 def _cmd_undo(_args) -> list[str]:
     return ["reverted last change." if ts.undo() else "nothing to undo."]
 
@@ -461,6 +534,7 @@ DISPATCH = {
     "merchants": _cmd_merchants, "cat": _cmd_cat, "set": _cmd_set, "rule": _cmd_rule,
     "label": _cmd_label,
     "summary": _cmd_summary, "undo": _cmd_undo, "plaid": _cmd_plaid,
+    "import": _cmd_import,
 }
 
 
@@ -482,3 +556,84 @@ def run_command(body: Command):
         return {"output": fn(args)}
     except Exception as e:
         return {"output": [f"error: {e}"]}
+
+
+# --- Statement import (GUI upload) --------------------------------------------
+#
+# The console `import` command works off files staged in dump/. The GUI instead
+# uploads a file directly. Both share the same importer service, so behaviour
+# (data-start filter, offset handling, reconciliation) is identical. Two stateless
+# endpoints: /import/preview shows what a commit would do (writes nothing),
+# /import/commit performs it. The upload is re-sent to commit rather than held in
+# server memory, keeping the endpoints stateless.
+
+# Cap uploads at a sane size - a year of PayPal PDFs is well under this.
+_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+def _preview_to_dict(preview) -> dict:
+    """Serialize an ImportPreview for the frontend."""
+    from importers import service
+
+    return {
+        "files": [
+            {"filename": pf.filename, "reader": pf.reader,
+             "count": len(pf.txns), "error": pf.error}
+            for pf in preview.files
+        ],
+        "problems": preview.problems,
+        "import_count": preview.import_count,
+        "data_start": str(service.DATA_START),
+        "to_import": [
+            {"date": r["date"], "amount": r["amount"], "name": r["name"],
+             "category": r.get("category")}
+            for r in preview.to_import
+        ],
+        "pre_start_count": len(preview.pre_start),
+        "offsets_count": len(preview.offsets),
+        "reconciled": [
+            {"date": m.paypal_date, "amount": m.amount, "name": m.paypal_name}
+            for m in preview.reconciled
+        ],
+    }
+
+
+async def _read_upload(upload: UploadFile) -> tuple[str, bytes]:
+    data = await upload.read()
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise ValueError(f"upload too large ({len(data)} bytes; max {_MAX_UPLOAD_BYTES})")
+    return upload.filename or "upload", data
+
+
+@router.post("/import/preview")
+async def import_preview(file: UploadFile = File(...)):
+    """Parse an uploaded statement file/zip and return a preview (writes nothing)."""
+    from importers import service
+
+    try:
+        name, data = await _read_upload(file)
+        files = service.collect_files(name, data)
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    if not files:
+        return {"ok": False, "error": "no importable files found in upload"}
+    preview = service.preview_files(files)
+    return {"ok": True, "preview": _preview_to_dict(preview)}
+
+
+@router.post("/import/commit")
+async def import_commit(file: UploadFile = File(...)):
+    """Parse an uploaded statement file/zip and commit it to the store."""
+    from importers import service
+
+    try:
+        name, data = await _read_upload(file)
+        files = service.collect_files(name, data)
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    if not files:
+        return {"ok": False, "error": "no importable files found in upload"}
+    _log(f"import/commit {name}")
+    preview = service.preview_files(files)
+    summary = service.commit(preview)
+    return {"ok": True, "preview": _preview_to_dict(preview), "summary": summary}
