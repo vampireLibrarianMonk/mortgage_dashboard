@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import type { Classification } from "../../types";
+import MDToggle from "./MDToggle";
 
 interface Props {
   label: string;
@@ -8,6 +10,9 @@ interface Props {
   max?: number;
   step?: string;
   suffix?: string;
+  // When provided, renders an inline Mandatory/Discretionary toggle.
+  classification?: Classification;
+  onClassificationChange?: (v: Classification) => void;
 }
 
 function parseNumeric(raw: string): number {
@@ -27,17 +32,22 @@ function formatDisplay(raw: string): string {
   return cleaned;
 }
 
-export default function NumberInput({ label, value, onChange, min = 0, max, suffix }: Props) {
+export default function NumberInput({ label, value, onChange, min = 0, max, suffix, classification, onClassificationChange }: Props) {
   const [display, setDisplay] = useState(String(value));
+  // Track the last `value` prop we synced from so we can detect an external
+  // change (e.g. a profile load) and refresh the editable display string.
+  const [lastValue, setLastValue] = useState(value);
 
-  // Sync display when value changes externally (e.g. profile load)
-  useEffect(() => {
-    const current = parseNumeric(display);
-    if (current !== value) {
+  // Adjust state during render instead of in an effect: when the incoming prop
+  // differs from what we last saw AND from what the user is currently editing,
+  // reset the display to the new value. This is React's recommended pattern for
+  // syncing state to a prop, and avoids a setState-in-effect round trip.
+  if (value !== lastValue) {
+    setLastValue(value);
+    if (parseNumeric(display) !== value) {
       setDisplay(String(value));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }
 
   const handleChange = (raw: string) => {
     const formatted = formatDisplay(raw);
@@ -59,6 +69,9 @@ export default function NumberInput({ label, value, onChange, min = 0, max, suff
         onBlur={() => setDisplay(String(value))}
       />
       {suffix && <span className="suffix">{suffix}</span>}
+      {classification && onClassificationChange && (
+        <MDToggle value={classification} onChange={onClassificationChange} />
+      )}
     </div>
   );
 }

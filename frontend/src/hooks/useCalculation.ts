@@ -32,7 +32,6 @@ const initialState: CalculateRequest = {
     other_home_costs_annual: 0,
   },
   household_expenses: {
-    daycare_weekly: 0,
     groceries_weekly: 0,
     property_expenses_monthly: 0,
   },
@@ -48,17 +47,26 @@ const initialState: CalculateRequest = {
     gasoline_weekly: 0,
     car_maintenance_annual: 0,
     car_insurance_monthly: 0,
-    hov_monthly: 0,
   },
-  college_savings: {
+  child_care: {
     contribution_annual_per_child: 0,
     number_of_children: 0,
+    food_monthly: 0,
+    daycare_weekly: 0,
+    babysitter_monthly: 0,
+    toiletries_monthly: 0,
+    hov_monthly: 0,
+  },
+  pet_care: {
+    food_monthly: 0,
+    vet_annual: 0,
+    grooming_monthly: 0,
   },
   additional_expenses: [],
   discretionary: [
-    { name: "Eating Out", amount: 0, frequency: "monthly" },
-    { name: "Movies", amount: 0, frequency: "monthly" },
-    { name: "Vacations", amount: 0, frequency: "annual" },
+    { name: "Eating Out", amount: 0, frequency: "monthly", classification: "D" },
+    { name: "Movies", amount: 0, frequency: "monthly", classification: "D" },
+    { name: "Vacations", amount: 0, frequency: "annual", classification: "D" },
   ],
   take_home_pay: [],
   extra_principal: {
@@ -66,6 +74,7 @@ const initialState: CalculateRequest = {
     escalating: null,
     lump_sums: [],
   },
+  classifications: {},
 };
 
 type Action =

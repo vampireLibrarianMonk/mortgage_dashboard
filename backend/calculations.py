@@ -1,9 +1,8 @@
-from datetime import date
 from models import (
     CalculateRequest,
     CalculateResponse,
-    InputMode,
     ExtraPrincipalFrequency,
+    InputMode,
     PurchaseMode,
 )
 
@@ -300,8 +299,7 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
     # Household monthly
     he = req.household_expenses
     household_monthly = (
-        _weekly_to_monthly(he.daycare_weekly)
-        + _weekly_to_monthly(he.groceries_weekly)
+        _weekly_to_monthly(he.groceries_weekly)
         + he.property_expenses_monthly
     )
 
@@ -315,19 +313,33 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         + ut.water_monthly
     )
 
-    # Vehicle monthly
+    # Vehicle monthly (HOV moved to child care)
     ve = req.vehicle_expenses
     vehicle_monthly = (
         _annual_to_monthly(ve.car_tax_annual)
         + _weekly_to_monthly(ve.gasoline_weekly)
         + _annual_to_monthly(ve.car_maintenance_annual)
         + ve.car_insurance_monthly
-        + ve.hov_monthly
     )
 
-    # College monthly
-    cs = req.college_savings
-    college_monthly = _annual_to_monthly(cs.contribution_annual_per_child * cs.number_of_children)
+    # Child care monthly (college savings per child + food + daycare + babysitter + toiletries + HOV)
+    cc = req.child_care
+    child_care_monthly = (
+        _annual_to_monthly(cc.contribution_annual_per_child * cc.number_of_children)
+        + cc.food_monthly
+        + _weekly_to_monthly(cc.daycare_weekly)
+        + cc.babysitter_monthly
+        + cc.toiletries_monthly
+        + cc.hov_monthly
+    )
+
+    # Pet care monthly (food + vet annual + grooming)
+    pc = req.pet_care
+    pet_care_monthly = (
+        pc.food_monthly
+        + _annual_to_monthly(pc.vet_annual)
+        + pc.grooming_monthly
+    )
 
     # Additional expenses monthly
     additional_monthly = sum(
@@ -344,6 +356,67 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         return row.amount  # monthly
     discretionary_monthly = sum(_discretionary_row_monthly(row) for row in req.discretionary)
 
+    # --- Mandatory vs Discretionary rollup (per line, across all sections) ---
+    # Each fixed line has a canonical key and a built-in default class. The
+    # request's `classifications` map overrides any key. List rows carry their
+    # own classification field. The mortgage payment (P&I + escrow) is always
+    # mandatory and is added to the mandatory bucket directly below.
+    overrides = req.classifications
+
+    # (key, monthly_value, default_class)
+    fixed_lines: list[tuple[str, float, str]] = [
+        # Household — mandatory
+        ("household.groceries_weekly", _weekly_to_monthly(he.groceries_weekly), "M"),
+        ("household.property_expenses_monthly", he.property_expenses_monthly, "M"),
+        # Utilities — all mandatory
+        ("utilities.cable_internet_monthly", ut.cable_internet_monthly, "M"),
+        ("utilities.cellular_monthly", ut.cellular_monthly, "M"),
+        ("utilities.electricity_monthly", ut.electricity_monthly, "M"),
+        ("utilities.gas_monthly", ut.gas_monthly, "M"),
+        ("utilities.water_monthly", ut.water_monthly, "M"),
+        # Vehicle — mandatory
+        ("vehicle.car_tax_annual", _annual_to_monthly(ve.car_tax_annual), "M"),
+        ("vehicle.gasoline_weekly", _weekly_to_monthly(ve.gasoline_weekly), "M"),
+        ("vehicle.car_maintenance_annual", _annual_to_monthly(ve.car_maintenance_annual), "M"),
+        ("vehicle.car_insurance_monthly", ve.car_insurance_monthly, "M"),
+        # Child care — daycare/food/toiletries mandatory; college/babysitter/HOV discretionary
+        ("child_care.college", _annual_to_monthly(cc.contribution_annual_per_child * cc.number_of_children), "D"),
+        ("child_care.food_monthly", cc.food_monthly, "M"),
+        ("child_care.daycare_weekly", _weekly_to_monthly(cc.daycare_weekly), "M"),
+        ("child_care.babysitter_monthly", cc.babysitter_monthly, "D"),
+        ("child_care.toiletries_monthly", cc.toiletries_monthly, "M"),
+        ("child_care.hov_monthly", cc.hov_monthly, "D"),
+        # Pet care — food/vet mandatory; grooming discretionary
+        ("pet_care.food_monthly", pc.food_monthly, "M"),
+        ("pet_care.vet_annual", _annual_to_monthly(pc.vet_annual), "M"),
+        ("pet_care.grooming_monthly", pc.grooming_monthly, "D"),
+        # Tax & cost — mandatory (other home costs; escrow handled with the mortgage below)
+        ("tax_and_cost.other_home_costs_annual", _annual_to_monthly(tc.other_home_costs_annual), "M"),
+    ]
+
+    mandatory_monthly = 0.0
+    discretionary_total_monthly = 0.0
+    for key, value, default_class in fixed_lines:
+        cls = overrides.get(key, default_class)
+        if cls == "D":
+            discretionary_total_monthly += value
+        else:
+            mandatory_monthly += value
+
+    # List rows carry their own classification.
+    for row in req.additional_expenses:
+        v = row.amount if row.frequency == "monthly" else _annual_to_monthly(row.amount)
+        if row.classification == "D":
+            discretionary_total_monthly += v
+        else:
+            mandatory_monthly += v
+    for row in req.discretionary:
+        v = _discretionary_row_monthly(row)
+        if row.classification == "D":
+            discretionary_total_monthly += v
+        else:
+            mandatory_monthly += v
+
     # Required monthly with escrow (what the lender bills)
     # Escrow = property tax + insurance + PMI + HOA
     escrow_monthly = property_tax_monthly + _annual_to_monthly(tc.home_insurance_annual) + tc.pmi_monthly + tc.hoa_monthly
@@ -352,6 +425,10 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
     # Planned mortgage outflow = required with escrow + extra principal
     planned_mortgage_outflow = required_monthly_with_escrow + extra_monthly
 
+    # The mortgage payment plus escrow and any scheduled extra principal is always
+    # mandatory. (Escrow is not in fixed_lines above; other_home_costs is.)
+    mandatory_monthly += planned_mortgage_outflow
+
     # Planned monthly housing total (all categories)
     planned_monthly_housing_total = (
         planned_mortgage_outflow
@@ -359,7 +436,8 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         + household_monthly
         + utilities_monthly
         + vehicle_monthly
-        + college_monthly
+        + child_care_monthly
+        + pet_care_monthly
         + additional_monthly
         + discretionary_monthly
     )
@@ -406,9 +484,14 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         household_monthly=round(household_monthly, 2),
         utilities_monthly=round(utilities_monthly, 2),
         vehicle_monthly=round(vehicle_monthly, 2),
-        college_monthly=round(college_monthly, 2),
+        child_care_monthly=round(child_care_monthly, 2),
+        pet_care_monthly=round(pet_care_monthly, 2),
         additional_expenses_monthly=round(additional_monthly, 2),
         discretionary_monthly=round(discretionary_monthly, 2),
+        # Derive mandatory as the remainder so the M/D split always reconciles
+        # exactly with the rounded housing total (avoids 1-cent rounding drift).
+        discretionary_total_monthly=round(discretionary_total_monthly, 2),
+        mandatory_monthly=round(round(planned_monthly_housing_total, 2) - round(discretionary_total_monthly, 2), 2),
         planned_monthly_housing_total=round(planned_monthly_housing_total, 2),
         take_home_pay_monthly=round(take_home_monthly, 2),
         monthly_leftover=round(monthly_leftover, 2),

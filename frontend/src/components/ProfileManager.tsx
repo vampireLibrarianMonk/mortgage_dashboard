@@ -32,7 +32,6 @@ const defaults: CalculateRequest = {
     other_home_costs_annual: 0,
   },
   household_expenses: {
-    daycare_weekly: 0,
     groceries_weekly: 0,
     property_expenses_monthly: 0,
   },
@@ -48,17 +47,26 @@ const defaults: CalculateRequest = {
     gasoline_weekly: 0,
     car_maintenance_annual: 0,
     car_insurance_monthly: 0,
-    hov_monthly: 0,
   },
-  college_savings: {
+  child_care: {
     contribution_annual_per_child: 0,
     number_of_children: 0,
+    food_monthly: 0,
+    daycare_weekly: 0,
+    babysitter_monthly: 0,
+    toiletries_monthly: 0,
+    hov_monthly: 0,
+  },
+  pet_care: {
+    food_monthly: 0,
+    vet_annual: 0,
+    grooming_monthly: 0,
   },
   additional_expenses: [],
   discretionary: [
-    { name: "Eating Out", amount: 0, frequency: "monthly" },
-    { name: "Movies", amount: 0, frequency: "monthly" },
-    { name: "Vacations", amount: 0, frequency: "annual" },
+    { name: "Eating Out", amount: 0, frequency: "monthly", classification: "D" },
+    { name: "Movies", amount: 0, frequency: "monthly", classification: "D" },
+    { name: "Vacations", amount: 0, frequency: "annual", classification: "D" },
   ],
   take_home_pay: [],
   extra_principal: {
@@ -66,10 +74,69 @@ const defaults: CalculateRequest = {
     escalating: null,
     lump_sums: [],
   },
+  classifications: {},
 };
 
+/**
+ * Translate pre-restructure profiles into the current shape before the generic
+ * merge runs. Older profiles stored `college_savings` and a `daycare_weekly`
+ * field inside `household_expenses`; both now live under `child_care`. We map
+ * the known values across and let the generic merge fill the rest from defaults.
+ */
+function normalizeLegacyShape(data: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...data };
+  const legacyCollege = data.college_savings as Record<string, unknown> | undefined;
+  const legacyHousehold = data.household_expenses as Record<string, unknown> | undefined;
+  const legacyVehicle = data.vehicle_expenses as Record<string, unknown> | undefined;
+  const existingChild = data.child_care as Record<string, unknown> | undefined;
+
+  // HOV moved from vehicle_expenses into child_care. Pull the legacy value
+  // (from either an existing child_care block or the old vehicle block).
+  const legacyHov = Number(existingChild?.hov_monthly ?? legacyVehicle?.hov_monthly ?? 0);
+
+  // Build/repair the child_care block from whatever the profile has.
+  // Pre-restructure profiles had college_savings + household_expenses.daycare_weekly;
+  // pre-HOV-move profiles had vehicle_expenses.hov_monthly. Either way, land the
+  // values under child_care with sensible defaults for anything absent.
+  const needsChild =
+    existingChild === undefined ||
+    legacyCollege !== undefined ||
+    legacyHousehold?.daycare_weekly !== undefined ||
+    legacyVehicle?.hov_monthly !== undefined;
+
+  if (needsChild) {
+    out.child_care = {
+      contribution_annual_per_child: Number(existingChild?.contribution_annual_per_child ?? legacyCollege?.contribution_annual_per_child ?? 0),
+      number_of_children: Number(existingChild?.number_of_children ?? legacyCollege?.number_of_children ?? 0),
+      food_monthly: Number(existingChild?.food_monthly ?? 0),
+      daycare_weekly: Number(existingChild?.daycare_weekly ?? legacyHousehold?.daycare_weekly ?? 0),
+      babysitter_monthly: Number(existingChild?.babysitter_monthly ?? 0),
+      toiletries_monthly: Number(existingChild?.toiletries_monthly ?? 0),
+      hov_monthly: legacyHov,
+    };
+  }
+
+  // Strip a stray hov_monthly from vehicle_expenses so it does not linger.
+  if (legacyVehicle && "hov_monthly" in legacyVehicle) {
+    const v = { ...legacyVehicle };
+    delete v.hov_monthly;
+    out.vehicle_expenses = v;
+  }
+
+  // Ensure list rows carry a classification (older profiles predate the flag).
+  const withClass = (rows: unknown, fallback: "M" | "D") =>
+    Array.isArray(rows)
+      ? rows.map((r) => ({ ...(r as object), classification: (r as Record<string, unknown>).classification ?? fallback }))
+      : rows;
+  if (data.additional_expenses !== undefined) out.additional_expenses = withClass(data.additional_expenses, "M");
+  if (data.discretionary !== undefined) out.discretionary = withClass(data.discretionary, "D");
+
+  return out;
+}
+
 /** Deep merge loaded profile data with defaults to handle schema migrations */
-function migrateProfile(data: Record<string, unknown>): CalculateRequest {
+function migrateProfile(raw: Record<string, unknown>): CalculateRequest {
+  const data = normalizeLegacyShape(raw);
   const result = { ...defaults };
   for (const key of Object.keys(defaults) as (keyof CalculateRequest)[]) {
     if (data[key] !== undefined) {
@@ -110,6 +177,10 @@ export default function ProfileManager({ currentState, onLoad, onAddressChange }
     }
   }, []);
 
+  // Load the saved-profiles list once on mount. `refresh` setStates only after
+  // an awaited API call (async callback), not synchronously in the effect body,
+  // so it does not cause cascading renders; the rule can't see through the await.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { refresh(); }, [refresh]);
 
   const handleSave = async () => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { InputMode } from "../../types";
 
 interface Props {
@@ -25,14 +25,18 @@ function formatDisplay(raw: string): string {
 
 export default function DualModeInput({ label, value, mode, onValueChange, onModeChange }: Props) {
   const [display, setDisplay] = useState(String(value));
+  // Track the last synced `value` prop to detect external changes (profile load).
+  const [lastValue, setLastValue] = useState(value);
 
-  useEffect(() => {
-    const current = parseNumeric(display);
-    if (current !== value) {
+  // Adjust state during render (React's recommended prop-sync pattern) rather
+  // than in an effect, so the display refreshes when `value` changes externally
+  // without a setState-in-effect round trip or an extra render.
+  if (value !== lastValue) {
+    setLastValue(value);
+    if (parseNumeric(display) !== value) {
       setDisplay(String(value));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }
 
   const handleChange = (raw: string) => {
     const formatted = formatDisplay(raw);

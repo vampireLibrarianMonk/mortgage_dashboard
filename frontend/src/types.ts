@@ -1,6 +1,9 @@
 export type InputMode = "percent" | "dollars";
 export type ExtraPrincipalFrequency = "monthly" | "quarterly" | "semi_annual" | "annual";
 
+// Mandatory or Discretionary flag applied per line item.
+export type Classification = "M" | "D";
+
 export type PurchaseMode = "new_purchase" | "existing_mortgage";
 
 export interface HousePurchase {
@@ -37,7 +40,6 @@ export interface TaxAndCost {
 }
 
 export interface HouseholdExpenses {
-  daycare_weekly: number;
   groceries_weekly: number;
   property_expenses_monthly: number;
 }
@@ -55,18 +57,29 @@ export interface VehicleExpenses {
   gasoline_weekly: number;
   car_maintenance_annual: number;
   car_insurance_monthly: number;
+}
+
+export interface ChildCare {
+  contribution_annual_per_child: number;
+  number_of_children: number;
+  food_monthly: number;
+  daycare_weekly: number;
+  babysitter_monthly: number;
+  toiletries_monthly: number;
   hov_monthly: number;
 }
 
-export interface CollegeSavings {
-  contribution_annual_per_child: number;
-  number_of_children: number;
+export interface PetCare {
+  food_monthly: number;
+  vet_annual: number;
+  grooming_monthly: number;
 }
 
 export interface ExpenseRow {
   name: string;
   amount: number;
   frequency: "monthly" | "annual";
+  classification: Classification;
 }
 
 export interface IncomeRow {
@@ -79,6 +92,7 @@ export interface DiscretionaryRow {
   name: string;
   amount: number;
   frequency: "weekly" | "monthly" | "annual";
+  classification: Classification;
 }
 
 export interface RecurringExtraPrincipal {
@@ -113,11 +127,15 @@ export interface CalculateRequest {
   household_expenses: HouseholdExpenses;
   utilities: Utilities;
   vehicle_expenses: VehicleExpenses;
-  college_savings: CollegeSavings;
+  child_care: ChildCare;
+  pet_care: PetCare;
   additional_expenses: ExpenseRow[];
   discretionary: DiscretionaryRow[];
   take_home_pay: IncomeRow[];
   extra_principal: ExtraPrincipal;
+  // Per-line M/D overrides for fixed-field sections, keyed by canonical line
+  // key (e.g. "vehicle.car_insurance_monthly"). Missing keys use backend defaults.
+  classifications: Record<string, Classification>;
 }
 
 export interface CalculateResponse {
@@ -141,9 +159,12 @@ export interface CalculateResponse {
   household_monthly: number;
   utilities_monthly: number;
   vehicle_monthly: number;
-  college_monthly: number;
+  child_care_monthly: number;
+  pet_care_monthly: number;
   additional_expenses_monthly: number;
   discretionary_monthly: number;
+  mandatory_monthly: number;
+  discretionary_total_monthly: number;
   planned_monthly_housing_total: number;
   take_home_pay_monthly: number;
   monthly_leftover: number;

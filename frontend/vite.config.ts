@@ -13,6 +13,7 @@ export default defineConfig({
       // Same-origin API calls (see src/api.ts) are proxied to the backend in dev.
       '/calculate': `http://localhost:${BACKEND_PORT}`,
       '/profiles': `http://localhost:${BACKEND_PORT}`,
+      '/plaid': `http://localhost:${BACKEND_PORT}`,
     },
   },
 })

@@ -279,19 +279,30 @@ legend + * {
 /* Log rows (expenses, income) */
 .log-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 0.5rem;
   padding: 0.3rem 0;
   border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
 }
 
-.log-row button {
+/* Label grows to fill space so the M/D toggle and delete button line up
+   in consistent columns down the list. */
+.log-row > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The delete (x) button only — scoped so it does not restyle the M/D toggle. */
+.log-row > button {
+  flex: 0 0 auto;
   background: none;
   border: none;
   color: var(--accent);
   font-size: 1.2rem;
+  line-height: 1;
   cursor: pointer;
+  padding: 0;
 }
 
 .log-add {
@@ -416,6 +427,129 @@ h4 {
   text-align: right;
   font-weight: 500;
 }
+
+/* Plaid bank sync */
+.plaid-item {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.plaid-item-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.plaid-bank-name {
+  flex: 1 1 auto;
+  font-weight: 600;
+  font-size: 0.9rem;
+  min-width: 0;
+}
+
+.plaid-badge {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.plaid-badge-ready   { color: #4caf50; border-color: rgba(76,175,80,0.4);  background: rgba(76,175,80,0.12); }
+.plaid-badge-syncing { color: #42a5f5; border-color: rgba(66,165,245,0.4); background: rgba(66,165,245,0.12); }
+.plaid-badge-waiting { color: #ffa726; border-color: rgba(255,167,38,0.4); background: rgba(255,167,38,0.12); }
+.plaid-badge-error   { color: var(--accent); border-color: var(--accent); }
+
+.plaid-sync-btn {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.7rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.plaid-sync-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.plaid-sync-ready   { border-color: rgba(76,175,80,0.5);  color: #4caf50; }
+.plaid-sync-syncing { border-color: rgba(66,165,245,0.5); color: #42a5f5; }
+.plaid-sync-waiting { border-color: rgba(255,167,38,0.5); color: #ffa726; }
+.plaid-sync-error   { border-color: var(--accent); color: var(--accent); }
+
+.plaid-disconnect {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.plaid-disconnect:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.plaid-status-line {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-top: 0.3rem;
+}
+.plaid-status-error   { color: var(--accent); }
+.plaid-status-waiting { color: #ffa726; }
+.plaid-status-ready   { color: #4caf50; }
+
+/* Mandatory / Discretionary toggle */
+.md-toggle {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.md-toggle.md-m {
+  background: rgba(76, 175, 80, 0.15);
+  color: #4caf50;
+  border-color: rgba(76, 175, 80, 0.4);
+}
+
+.md-toggle.md-d {
+  background: rgba(255, 167, 38, 0.15);
+  color: #ffa726;
+  border-color: rgba(255, 167, 38, 0.4);
+}
+
+/* Budget vs Actual */
+.bva-grid {
+  display: block;
+  font-size: 0.82rem;
+}
+.bva-head, .bva-row {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+.bva-head {
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--muted);
+}
+.bva-head dt, .bva-head dd, .bva-row dt, .bva-row dd {
+  margin: 0;
+}
+.bva-row dd { text-align: right; }
+.bva-head dd { text-align: right; }
+.bva-row dd.negative { color: var(--accent); }
+.bva-row dd.positive { color: #4caf50; }
 
 /* Discretionary summary */
 .section-hint {
@@ -627,4 +761,88 @@ h4 {
   .report-chart .recharts-wrapper {
     margin: 0 auto;
   }
+}
+
+/* --- Page nav (Dashboard / Console) --- */
+.page-nav {
+  display: flex;
+  gap: 0.25rem;
+}
+.page-tab {
+  padding: 0.35rem 0.9rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.page-tab:hover {
+  color: var(--text);
+}
+.page-tab.active {
+  color: var(--text);
+  background: var(--border);
+}
+
+/* --- Console page --- */
+.console-page {
+  padding: 0;
+}
+.console {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 8rem);
+  min-height: 400px;
+  background: #0b0e17;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.85rem;
+  cursor: text;
+}
+.console-scrollback {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.console-line {
+  line-height: 1.45;
+}
+.console-input-line,
+.console-output {
+  color: var(--text);
+}
+.console-line.console-input {
+  color: #7fd1ff;
+}
+.console-line.console-error {
+  color: var(--accent);
+}
+.console-inputline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-top: 1px solid var(--border);
+  background: #0b0e17;
+}
+.console-prompt {
+  color: #4caf50;
+  font-weight: 700;
+}
+.console-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+}
+.console-input::placeholder {
+  color: var(--muted);
 }

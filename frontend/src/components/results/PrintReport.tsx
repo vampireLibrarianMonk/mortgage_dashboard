@@ -27,7 +27,8 @@ export default function PrintReport({ result, state }: Props) {
   const he = state.household_expenses;
   const ut = state.utilities;
   const ve = state.vehicle_expenses;
-  const cs = state.college_savings;
+  const cc = state.child_care;
+  const pc = state.pet_care;
   const ep = state.extra_principal;
   const isExisting = hp.purchase_mode === "existing_mortgage";
 
@@ -49,6 +50,8 @@ export default function PrintReport({ result, state }: Props) {
             <tr><td>Housing Payment (incl. extra principal)</td><td>{fmt(r.planned_mortgage_outflow_monthly)}</td></tr>
             <tr className="separator"><td colSpan={2}></td></tr>
             <tr><td>Total Monthly Obligations</td><td>{fmt(r.planned_monthly_housing_total)}</td></tr>
+            <tr><td>&nbsp;&nbsp;of which Mandatory</td><td>{fmt(r.mandatory_monthly)}</td></tr>
+            <tr><td>&nbsp;&nbsp;of which Discretionary</td><td>{fmt(r.discretionary_total_monthly)}</td></tr>
             <tr><td>Total Take Home Pay</td><td>{fmt(r.take_home_pay_monthly)}</td></tr>
             <tr className={r.monthly_leftover < 0 ? "negative" : "positive"}>
               <td><strong>Monthly Leftover</strong></td>
@@ -181,7 +184,6 @@ export default function PrintReport({ result, state }: Props) {
         <h2>Household Expenses</h2>
         <table className="report-table">
           <tbody>
-            <tr><td>Daycare</td><td>{he.daycare_weekly > 0 ? `${fmt(he.daycare_weekly)}/week` : "—"}</td></tr>
             <tr><td>Groceries</td><td>{he.groceries_weekly > 0 ? `${fmt(he.groceries_weekly)}/week` : "—"}</td></tr>
             <tr><td>Property Expenses</td><td>{he.property_expenses_monthly > 0 ? `${fmt(he.property_expenses_monthly)}/mo` : "—"}</td></tr>
             <tr className="separator"><td colSpan={2}></td></tr>
@@ -215,23 +217,43 @@ export default function PrintReport({ result, state }: Props) {
             <tr><td>Gasoline</td><td>{ve.gasoline_weekly > 0 ? `${fmt(ve.gasoline_weekly)}/week` : "—"}</td></tr>
             <tr><td>Car Maintenance</td><td>{ve.car_maintenance_annual > 0 ? `${fmt(ve.car_maintenance_annual)}/year` : "—"}</td></tr>
             <tr><td>Car Insurance</td><td>{ve.car_insurance_monthly > 0 ? `${fmt(ve.car_insurance_monthly)}/mo` : "—"}</td></tr>
-            <tr><td>HOV / Tolls</td><td>{ve.hov_monthly > 0 ? `${fmt(ve.hov_monthly)}/mo` : "—"}</td></tr>
             <tr className="separator"><td colSpan={2}></td></tr>
             <tr><td><strong>Monthly Total</strong></td><td><strong>{fmt(r.vehicle_monthly)}</strong></td></tr>
           </tbody>
         </table>
       </section>
 
-      {/* ─── COLLEGE SAVINGS ─── */}
-      {cs.number_of_children > 0 && (
+      {/* ─── CHILD CARE ─── */}
+      {r.child_care_monthly > 0 && (
         <section className="report-section">
-          <h2>College Savings (529)</h2>
+          <h2>Child Care</h2>
           <table className="report-table">
             <tbody>
-              <tr><td>Annual Contribution per Child</td><td>{fmt(cs.contribution_annual_per_child)}</td></tr>
-              <tr><td>Number of Children</td><td>{cs.number_of_children}</td></tr>
+              <tr><td>529 Contribution per Child</td><td>{cc.contribution_annual_per_child > 0 ? `${fmt(cc.contribution_annual_per_child)}/year` : "—"}</td></tr>
+              <tr><td>Number of Children</td><td>{cc.number_of_children}</td></tr>
+              <tr><td>Food</td><td>{cc.food_monthly > 0 ? `${fmt(cc.food_monthly)}/mo` : "—"}</td></tr>
+              <tr><td>Daycare</td><td>{cc.daycare_weekly > 0 ? `${fmt(cc.daycare_weekly)}/week` : "—"}</td></tr>
+              <tr><td>Babysitter</td><td>{cc.babysitter_monthly > 0 ? `${fmt(cc.babysitter_monthly)}/mo` : "—"}</td></tr>
+              <tr><td>Toiletries</td><td>{cc.toiletries_monthly > 0 ? `${fmt(cc.toiletries_monthly)}/mo` : "—"}</td></tr>
+              <tr><td>HOV / Tolls</td><td>{cc.hov_monthly > 0 ? `${fmt(cc.hov_monthly)}/mo` : "—"}</td></tr>
               <tr className="separator"><td colSpan={2}></td></tr>
-              <tr><td><strong>Monthly Total</strong></td><td><strong>{fmt(r.college_monthly)}</strong></td></tr>
+              <tr><td><strong>Monthly Total</strong></td><td><strong>{fmt(r.child_care_monthly)}</strong></td></tr>
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {/* ─── PET CARE ─── */}
+      {r.pet_care_monthly > 0 && (
+        <section className="report-section">
+          <h2>Pet Care</h2>
+          <table className="report-table">
+            <tbody>
+              <tr><td>Food</td><td>{pc.food_monthly > 0 ? `${fmt(pc.food_monthly)}/mo` : "—"}</td></tr>
+              <tr><td>Vet</td><td>{pc.vet_annual > 0 ? `${fmt(pc.vet_annual)}/year` : "—"}</td></tr>
+              <tr><td>Grooming</td><td>{pc.grooming_monthly > 0 ? `${fmt(pc.grooming_monthly)}/mo` : "—"}</td></tr>
+              <tr className="separator"><td colSpan={2}></td></tr>
+              <tr><td><strong>Monthly Total</strong></td><td><strong>{fmt(r.pet_care_monthly)}</strong></td></tr>
             </tbody>
           </table>
         </section>

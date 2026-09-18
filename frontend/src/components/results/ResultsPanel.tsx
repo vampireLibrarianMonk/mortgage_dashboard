@@ -1,4 +1,5 @@
 import AmortizationChart from "./AmortizationChart";
+import BudgetVsActual from "./BudgetVsActual";
 import type { CalculateResponse, PurchaseMode, DiscretionaryRow } from "../../types";
 
 interface Props {
@@ -45,7 +46,7 @@ export default function ResultsPanel({ result, purchaseMode, discretionary }: Pr
         </div>
         <div className="banner-item">
           <span className="banner-label">Discretionary</span>
-          <span className="banner-value">{fmt(r.discretionary_monthly)}</span>
+          <span className="banner-value">{fmt(r.discretionary_total_monthly)}</span>
         </div>
         <div className="banner-item">
           <span className={`banner-value ${r.monthly_leftover < 0 ? "negative" : "positive"}`}>
@@ -65,6 +66,22 @@ export default function ResultsPanel({ result, purchaseMode, discretionary }: Pr
           <dt>Monthly Leftover</dt><dd>{fmt(r.monthly_leftover)}</dd>
         </dl>
       </section>
+
+      <section>
+        <h3>Mandatory vs Discretionary</h3>
+        <dl>
+          <dt>Mandatory (cannot cut)</dt><dd>{fmt(r.mandatory_monthly)}</dd>
+          <dt>Discretionary (can cut)</dt><dd>{fmt(r.discretionary_total_monthly)}</dd>
+        </dl>
+        {r.planned_monthly_housing_total > 0 && (
+          <p className="section-hint">
+            Discretionary is {Math.round((r.discretionary_total_monthly / r.planned_monthly_housing_total) * 100)}% of total outflow.
+            {" "}Cutting all of it would leave {fmt(r.take_home_pay_monthly - r.mandatory_monthly)} of headroom.
+          </p>
+        )}
+      </section>
+
+      <BudgetVsActual result={r} />
 
       {discretionaryRanked.length > 0 && (
         <section className="discretionary-summary">
@@ -126,7 +143,8 @@ export default function ResultsPanel({ result, purchaseMode, discretionary }: Pr
           <dt>Household Monthly</dt><dd>{fmt(r.household_monthly)}</dd>
           <dt>Utilities Monthly</dt><dd>{fmt(r.utilities_monthly)}</dd>
           <dt>Vehicle Monthly</dt><dd>{fmt(r.vehicle_monthly)}</dd>
-          <dt>College Monthly</dt><dd>{fmt(r.college_monthly)}</dd>
+          <dt>Child Care Monthly</dt><dd>{fmt(r.child_care_monthly)}</dd>
+          <dt>Pet Care Monthly</dt><dd>{fmt(r.pet_care_monthly)}</dd>
           <dt>Discretionary Monthly</dt><dd>{fmt(r.discretionary_monthly)}</dd>
           <dt>Additional Expenses Monthly</dt><dd>{fmt(r.additional_expenses_monthly)}</dd>
         </dl>

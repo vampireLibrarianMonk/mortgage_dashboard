@@ -50,3 +50,55 @@ export async function deleteProfile(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/profiles/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
 }
+
+// --- Plaid (read-only bank sync) ---
+
+export interface ActualsCategoryTotals {
+  Mortgage: number;
+  Household: number;
+  Utilities: number;
+  Vehicle: number;
+  ChildCare: number;
+  PetCare: number;
+  Discretionary: number;
+}
+
+export interface ActualsMonth {
+  month: string; // "2026-06"
+  categories: ActualsCategoryTotals;
+  unbudgeted_outflow: number;
+}
+
+export interface ActualsYear {
+  year: string;
+  categories: ActualsCategoryTotals;
+  unbudgeted_outflow: number;
+}
+
+export interface PlaidActuals {
+  available: boolean;
+  months: ActualsMonth[];
+  years: ActualsYear[];
+}
+
+// Budget vs Actual reads the aggregates-only JSON the console `summary` command
+// produces. All other Plaid interaction (status, sync, balances, link diagnostics)
+// is driven from the console page, not the dashboard.
+export async function plaidActuals(): Promise<PlaidActuals> {
+  const res = await fetch(`${API_BASE}/plaid/actuals`);
+  if (!res.ok) throw new Error(`Actuals failed: ${res.status}`);
+  return res.json();
+}
+
+// --- Categorization console ---
+
+export async function runConsole(command: string): Promise<string[]> {
+  const res = await fetch(`${API_BASE}/console/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command }),
+  });
+  if (!res.ok) throw new Error(`Console failed: ${res.status}`);
+  const data = await res.json();
+  return (data.output ?? []) as string[];
+}

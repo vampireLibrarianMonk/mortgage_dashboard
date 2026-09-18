@@ -33,3 +33,15 @@ Thumbs.db
 deploy/caddy.exe
 # Deploy — generated frontend build served by FastAPI
 frontend/dist/
+
+# Encrypted transaction/rule store + console audit (never commit financial data)
+backend/txn_data/
+backend/console_history.log
+backend/plaid_actuals.json
+
+# Plaid pipeline — never commit transaction data, encrypted store, or intermediates
+plaid_pipeline/data/
+plaid_pipeline/*.parquet
+plaid_pipeline/*.enc
+plaid_pipeline/*.json
+plaid_pipeline/__pycache__/

@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
 from enum import Enum
+
+from pydantic import BaseModel, Field
 
 
 class InputMode(str, Enum):
@@ -46,7 +47,6 @@ class TaxAndCost(BaseModel):
 
 
 class HouseholdExpenses(BaseModel):
-    daycare_weekly: float = Field(ge=0, default=0)
     groceries_weekly: float = Field(ge=0, default=0)
     property_expenses_monthly: float = Field(ge=0, default=0)
 
@@ -64,24 +64,37 @@ class VehicleExpenses(BaseModel):
     gasoline_weekly: float = Field(ge=0, default=0)
     car_maintenance_annual: float = Field(ge=0, default=0)
     car_insurance_monthly: float = Field(ge=0, default=0)
-    hov_monthly: float = Field(ge=0, default=0)
 
 
-class CollegeSavings(BaseModel):
+class ChildCare(BaseModel):
+    # College savings keeps the per-child model: contribution x number_of_children.
     contribution_annual_per_child: float = Field(ge=0, default=0)
     number_of_children: int = Field(ge=0, default=0)
+    food_monthly: float = Field(ge=0, default=0)
+    daycare_weekly: float = Field(ge=0, default=0)  # billed weekly
+    babysitter_monthly: float = Field(ge=0, default=0)
+    toiletries_monthly: float = Field(ge=0, default=0)  # diapers, etc.
+    hov_monthly: float = Field(ge=0, default=0)  # HOV/toll lanes, primarily for the children
+
+
+class PetCare(BaseModel):
+    food_monthly: float = Field(ge=0, default=0)
+    vet_annual: float = Field(ge=0, default=0)
+    grooming_monthly: float = Field(ge=0, default=0)
 
 
 class ExpenseRow(BaseModel):
     name: str
     amount: float = Field(ge=0)
     frequency: str = Field(pattern="^(monthly|annual)$")
+    classification: str = Field(pattern="^[MD]$", default="M")  # M=mandatory, D=discretionary
 
 
 class DiscretionaryRow(BaseModel):
     name: str
     amount: float = Field(ge=0)
     frequency: str = Field(pattern="^(weekly|monthly|annual)$")
+    classification: str = Field(pattern="^[MD]$", default="D")
 
 
 class IncomeRow(BaseModel):
@@ -130,11 +143,17 @@ class CalculateRequest(BaseModel):
     household_expenses: HouseholdExpenses = HouseholdExpenses()
     utilities: Utilities = Utilities()
     vehicle_expenses: VehicleExpenses = VehicleExpenses()
-    college_savings: CollegeSavings = CollegeSavings()
+    child_care: ChildCare = ChildCare()
+    pet_care: PetCare = PetCare()
     additional_expenses: list[ExpenseRow] = []
     discretionary: list[DiscretionaryRow] = []
     take_home_pay: list[IncomeRow] = []
     extra_principal: ExtraPrincipal = ExtraPrincipal()
+    # Per-line Mandatory/Discretionary overrides, keyed by canonical line key
+    # (e.g. "vehicle.car_insurance_monthly", "child_care.hov_monthly"). Values
+    # are "M" or "D". Missing keys fall back to the built-in defaults in
+    # calculations.py. List rows carry their own classification field instead.
+    classifications: dict[str, str] = {}
 
 
 class CalculateResponse(BaseModel):
@@ -167,7 +186,8 @@ class CalculateResponse(BaseModel):
     household_monthly: float
     utilities_monthly: float
     vehicle_monthly: float
-    college_monthly: float
+    child_care_monthly: float
+    pet_care_monthly: float
     additional_expenses_monthly: float
     discretionary_monthly: float
 
@@ -175,6 +195,10 @@ class CalculateResponse(BaseModel):
     planned_monthly_housing_total: float
     take_home_pay_monthly: float
     monthly_leftover: float
+
+    # Mandatory vs Discretionary split (per-line, across all sections)
+    mandatory_monthly: float = 0
+    discretionary_total_monthly: float = 0
 
     # Cash to close
     prepaids_escrow_low: float

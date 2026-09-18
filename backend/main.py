@@ -6,9 +6,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from models import CalculateRequest, CalculateResponse
-from calculations import calculate
 import profiles_store
+from calculations import calculate
+from console_routes import router as console_router
+from models import CalculateRequest, CalculateResponse
+from plaid_routes import router as plaid_router
 
 app = FastAPI(title="Mortgage Dashboard API")
 
@@ -21,6 +23,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(plaid_router)
+app.include_router(console_router)
 
 
 @app.post("/calculate", response_model=CalculateResponse)

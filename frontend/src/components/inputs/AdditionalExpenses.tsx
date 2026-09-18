@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { ExpenseRow } from "../../types";
+import type { ExpenseRow, Classification } from "../../types";
+import MDToggle from "./MDToggle";
 
 interface Props {
   data: ExpenseRow[];
@@ -19,12 +20,15 @@ export default function AdditionalExpenses({ data, onChange }: Props) {
   const add = () => {
     const amount = parseNumeric(amountStr);
     if (!name || amount <= 0) return;
-    onChange([...data, { name, amount, frequency }]);
+    onChange([...data, { name, amount, frequency, classification: "M" }]);
     setName("");
     setAmountStr("0");
   };
 
   const remove = (i: number) => onChange(data.filter((_, idx) => idx !== i));
+
+  const setClassification = (i: number, c: Classification) =>
+    onChange(data.map((row, idx) => (idx === i ? { ...row, classification: c } : row)));
 
   return (
     <fieldset>
@@ -32,6 +36,7 @@ export default function AdditionalExpenses({ data, onChange }: Props) {
       {data.map((row, i) => (
         <div key={i} className="log-row">
           <span>{row.name}: ${row.amount.toLocaleString()}/{row.frequency === "monthly" ? "mo" : "yr"}</span>
+          <MDToggle value={row.classification} onChange={(c) => setClassification(i, c)} />
           <button type="button" onClick={() => remove(i)}>×</button>
         </div>
       ))}

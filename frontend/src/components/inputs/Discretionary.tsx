@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { DiscretionaryRow } from "../../types";
+import type { DiscretionaryRow, Classification } from "../../types";
+import MDToggle from "./MDToggle";
 
 interface Props {
   data: DiscretionaryRow[];
@@ -27,12 +28,15 @@ export default function Discretionary({ data, onChange }: Props) {
   const add = () => {
     const amount = parseNumeric(amountStr);
     if (!name || amount <= 0) return;
-    onChange([...data, { name, amount, frequency }]);
+    onChange([...data, { name, amount, frequency, classification: "D" }]);
     setName("");
     setAmountStr("0");
   };
 
   const remove = (i: number) => onChange(data.filter((_, idx) => idx !== i));
+
+  const setClassification = (i: number, c: Classification) =>
+    onChange(data.map((row, idx) => (idx === i ? { ...row, classification: c } : row)));
 
   return (
     <fieldset>
@@ -42,6 +46,7 @@ export default function Discretionary({ data, onChange }: Props) {
           <span>
             {row.name}: ${row.amount.toLocaleString()}/{FREQ_SUFFIX[row.frequency]}
           </span>
+          <MDToggle value={row.classification} onChange={(c) => setClassification(i, c)} />
           <button type="button" onClick={() => remove(i)}>×</button>
         </div>
       ))}
