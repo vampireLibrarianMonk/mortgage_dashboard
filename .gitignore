@@ -45,3 +45,7 @@ plaid_pipeline/*.parquet
 plaid_pipeline/*.enc
 plaid_pipeline/*.json
 plaid_pipeline/__pycache__/
+# Dump — drop zone for statements/exports to hand off. Keep the dir but never
+# commit anything dropped into it (financial data). Only .gitkeep is tracked.
+dump/*
+!dump/.gitkeep
