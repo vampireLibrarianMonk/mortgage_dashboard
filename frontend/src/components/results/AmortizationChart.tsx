@@ -32,7 +32,7 @@ export default function AmortizationChart({ schedule }: Props) {
       <html>
       <head>
         <title>Amortization Schedule</title>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"><\/script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <style>
           body { margin: 0; padding: 1rem; background: #1a1a2e; color: #eaeaea; font-family: system-ui; }
           canvas { width: 100% !important; height: 450px !important; }
@@ -62,7 +62,7 @@ export default function AmortizationChart({ schedule }: Props) {
               plugins: { legend: { labels: { color: '#eaeaea' } } }
             }
           });
-        <\/script>
+        </script>
       </body>
       </html>
     `);

@@ -1,8 +1,8 @@
 """Simple JSON-file profile storage keyed by street address."""
 import json
 import uuid
-from pathlib import Path
 from datetime import datetime, timezone
+from pathlib import Path
 
 PROFILES_DIR = Path(__file__).parent / "profiles"
 PROFILES_DIR.mkdir(exist_ok=True)
