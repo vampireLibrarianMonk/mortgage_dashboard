@@ -124,3 +124,43 @@ powershell -ExecutionPolicy Bypass -File deploy\update-hosts.ps1 -Remove       #
 | `start-apps.ps1` | Launches each app on its port; polls health. |
 | `start-proxy.ps1` | Runs Caddy with the generated `Caddyfile`. |
 | `register-startup.ps1` | (admin) Registers/removes the boot tasks. `-Remove` to undo. |
+
+## Plaid bank sync (read-only)
+
+The app pulls transactions and balances from linked banks via Plaid, read-only.
+All bank interaction is driven from the **Console page** in the app (there is no
+Plaid GUI panel) — see the [User Guide](../USER_GUIDE.md) for the `sync` and
+`plaid` console commands.
+
+### How credentials are stored
+
+- **Plaid API keys** live in Windows Credential Manager, never in files or printed.
+  `start-apps.ps1` reads them at startup and passes them to the backend as
+  `PLAID_CLIENT_ID` / `PLAID_SECRET` env vars. Credential targets:
+  `plaid_client_id`, `plaid_sandbox_secret`, `plaid_production_client_id`,
+  `plaid_production_secret`.
+  - To (re)store them from a repo-root `.env`, run as the account the app runs as
+    (LocalMachine scope needs an **admin** shell):
+    `powershell -ExecutionPolicy Bypass -File deploy\store-plaid-credentials.ps1`
+- **Per-bank access tokens and sync cursors** are created when a bank is linked and
+  stored as `plaid_item_<slug>_access_token` / `plaid_item_<slug>_cursor`, with a
+  JSON index of connected banks in `plaid_items`. These never appear in any file.
+
+### Environment (sandbox vs. production)
+
+Set `PLAID_ENV` (`sandbox` or `production`) in the startup environment. Sandbox
+connects only to Plaid's fake test banks; production connects to real accounts and
+requires production keys plus Plaid app approval. The client is environment-agnostic
+— switching is a matter of the secret and `PLAID_ENV`.
+
+### Rotating the production secret
+
+If the production secret may have been exposed, or on a routine schedule, rotate it.
+The full procedure (regenerate at Plaid → update `.env` → run
+`store-plaid-credentials.ps1` as admin → restart) is in the
+[Developer Guide](../DEVELOPER_GUIDE.md#rotating-the-plaid-production-secret).
+
+### API version
+
+The Plaid client is pinned to API version **2020-09-14** (the account default) via
+`plaid_client.py`, so responses stay stable regardless of account-level changes.
