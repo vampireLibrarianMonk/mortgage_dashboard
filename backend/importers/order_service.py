@@ -1,0 +1,241 @@
+"""Order-split service: match an itemized order to a stored transaction and split it.
+
+Ties the order-detail readers to the transaction store. Given an
+:class:`OrderDetail` (parsed from a Walmart/Amazon invoice PDF), it:
+
+1. **Matches** the order to the one stored transaction that actually carries the
+   spend, by absolute total + date proximity. It deliberately skips rows that
+   net out or are excluded (offset/Ignore-categorized), and prefers a row whose
+   name/merchant looks like the vendor. Ambiguity is reported, not guessed.
+2. **Builds a split plan**: one child per line item, with shipping + tax − savings
+   distributed *proportionally* across the items so the children sum to the
+   transaction total (fees are counted, not set aside). Each item's category is
+   drawn from the existing merchant-rule engine matched on the *item name* (so it
+   learns over time); unmatched items default to Uncategorized.
+3. **Applies** the split via ``txn_store.split_transaction`` (snapshotted/undoable).
+
+Preview and commit are separate so callers (console/GUI) can show the plan first.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+from dataclasses import dataclass, field
+
+import txn_store as ts
+
+from .orders import OrderDetail
+
+import re
+
+# How far apart (days) the order date and a transaction date may be to match.
+# A charge posts ON or AFTER the order date, occasionally a day early (pre-auth),
+# and up to a few days later; a charge well before the order is not this order.
+_MATCH_DAYS_AFTER = 6   # charge may post up to N days after the order
+_MATCH_DAYS_BEFORE = 1  # ...or at most 1 day before (pre-auth tolerance)
+_AMOUNT_TOLERANCE = 0.01
+# Categories that mean "this row does not carry real budget spend" - never split.
+_EXCLUDED_MATCH_CATEGORIES = {"Ignore", "Split"}
+
+# A stored row whose name matches any of these is a payment/transfer/deposit, not
+# a purchase, and can never be an itemizable order - excluded from candidates.
+_NON_PURCHASE_RE = re.compile(
+    r"crd\s*epay|credit\s*card\s*payment|card\s*epay|"
+    r"\btransfer\b|\bpayroll\b|\bdeposit\b|funds\s*transfer|"
+    r"ach\s*(?:debit|transaction)|autopay|bill\s*pay|paid\s*check",
+    re.IGNORECASE)
+
+
+@dataclass
+class SplitChildPlan:
+    amount: float
+    category: str
+    note: str  # the item name (+ qty when > 1)
+
+
+@dataclass
+class OrderSplitPlan:
+    """What splitting one order would do - computed without writing anything."""
+
+    order: OrderDetail
+    matched_txn_id: str | None = None
+    matched_txn: dict | None = None
+    children: list[SplitChildPlan] = field(default_factory=list)
+    candidates: list[dict] = field(default_factory=list)  # when ambiguous
+    status: str = ""  # "ready" | "no-match" | "ambiguous" | "no-total"
+    warnings: list[str] = field(default_factory=list)
+
+    @property
+    def child_dicts(self) -> list[dict]:
+        return [{"amount": c.amount, "category": c.category, "note": c.note}
+                for c in self.children]
+
+
+def _txn_name(t: dict) -> str:
+    return f"{t.get('name', '')} {t.get('merchant', '')}"
+
+
+def _candidate_txns(order: OrderDetail) -> list[dict]:
+    """Stored transactions that could plausibly be this order.
+
+    Filters: |amount| == total; category not excluded; not an offset deposit; not
+    a payment/transfer/deposit row (by name); and dated on/after the order (with a
+    1-day pre-auth tolerance) up to the forward window. The date-direction guard
+    rules out coincidental same-amount rows that predate the order.
+    """
+    if order.total is None:
+        return []
+    total = round(order.total, 2)
+    out: list[dict] = []
+    for t in ts.load_transactions():
+        if t.get("category") in _EXCLUDED_MATCH_CATEGORIES:
+            continue
+        if t.get("offset"):
+            continue
+        if _NON_PURCHASE_RE.search(_txn_name(t)):
+            continue
+        if abs(round(abs(float(t.get("amount", 0.0))), 2) - total) > _AMOUNT_TOLERANCE:
+            continue
+        if order.date is not None:
+            try:
+                td = dt.date.fromisoformat(t["date"])
+            except (ValueError, KeyError):
+                td = None
+            if td is not None:
+                delta = (td - order.date).days
+                if delta < -_MATCH_DAYS_BEFORE or delta > _MATCH_DAYS_AFTER:
+                    continue
+        out.append(t)
+    return out
+
+
+def _is_vendor_named(order: OrderDetail, cand: dict) -> bool:
+    return order.vendor.lower() in _txn_name(cand).lower()
+
+
+def _netted_purchase_ids() -> set[str]:
+    """transaction_ids of PayPal purchases that are offset (netted to zero) by a
+    matching Credit-Card-Deposit row. These are NOT the real budget spend - the
+    standalone bank/card row is - so the matcher deprioritizes them."""
+    txns = ts.load_transactions()
+    ids = {t["transaction_id"] for t in txns}
+    netted: set[str] = set()
+    for t in txns:
+        if t.get("offset") and t.get("offsets_id") in ids:
+            netted.add(t["offsets_id"])
+    return netted
+
+
+def _rank(order: OrderDetail, cand: dict, netted: set[str]) -> tuple:
+    """Sort key; lower is better. Prefer (1) a row that carries real net spend
+    (not a netted PayPal purchase), (2) a vendor-named row, (3) closest date."""
+    is_netted = 1 if cand["transaction_id"] in netted else 0
+    name = f"{cand.get('name','')} {cand.get('merchant','')}".lower()
+    vendor_hit = 0 if order.vendor.lower() in name else 1
+    if order.date is not None:
+        try:
+            gap = abs((dt.date.fromisoformat(cand["date"]) - order.date).days)
+        except (ValueError, KeyError):
+            gap = _MATCH_DAY_WINDOW + 1
+    else:
+        gap = 0
+    return (is_netted, vendor_hit, gap)
+
+
+def _allocate_children(order: OrderDetail) -> list[SplitChildPlan]:
+    """One child per item; shipping+tax-savings distributed proportionally by item
+    price so the children sum to the order total. Categories from item-name rules.
+    """
+    total = round(order.total or 0.0, 2)
+    items = order.items
+    rules = ts.load_rules()
+
+    base_sum = round(sum(i.price for i in items), 2)
+    # The amount to spread across items on top of their own prices (fees net of
+    # discounts). Can be negative if savings exceed shipping+tax.
+    extra = round(total - base_sum, 2)
+
+    children: list[SplitChildPlan] = []
+    running = 0.0
+    for idx, it in enumerate(items):
+        share = (it.price / base_sum) if base_sum else (1.0 / len(items))
+        alloc = it.price + extra * share
+        # Put any rounding remainder on the last child so children sum exactly.
+        if idx == len(items) - 1:
+            amount = round(total - running, 2)
+        else:
+            amount = round(alloc, 2)
+            running = round(running + amount, 2)
+        cat = _category_for_item(it.name, rules) or "Uncategorized"
+        note = it.name if it.qty <= 1 else f"{it.name} (x{it.qty})"
+        children.append(SplitChildPlan(amount=amount, category=cat, note=note))
+    return children
+
+
+def _category_for_item(item_name: str, rules: list[dict]) -> str | None:
+    """Reuse the existing merchant-rule engine, matched on the item name, so
+    itemized splits learn from the same `cat` rules the user already builds."""
+    pseudo = {"name": item_name, "merchant": ""}
+    return ts._match_rule(pseudo, rules)
+
+
+def plan_split(order: OrderDetail) -> OrderSplitPlan:
+    """Match the order to a transaction and build the split plan (writes nothing)."""
+    plan = OrderSplitPlan(order=order)
+    if order.total is None:
+        plan.status = "no-total"
+        plan.warnings.append("order has no parseable total")
+        return plan
+
+    cands = _candidate_txns(order)
+    if not cands:
+        plan.status = "no-match"
+        plan.warnings.append(
+            f"no stored transaction for {order.vendor} total ${order.total:.2f} "
+            f"near {order.date} - sync/import the transaction first")
+        return plan
+
+    netted = _netted_purchase_ids()
+    cands.sort(key=lambda c: _rank(order, c, netted))
+    best = cands[0]
+    plan.candidates = cands
+
+    # Ambiguous only if two candidates tie on the ranking key.
+    if len(cands) > 1 and _rank(order, cands[1], netted) == _rank(order, best, netted):
+        plan.status = "ambiguous"
+        plan.warnings.append(f"{len(cands)} transactions match ${order.total:.2f}; pick one")
+        return plan
+
+    plan.matched_txn = best
+    plan.matched_txn_id = best["transaction_id"]
+    plan.children = _allocate_children(order)
+    plan.warnings.extend(order.sanity())
+
+    # Confidence: a vendor-named row (e.g. "Walmart") is a strong match. A generic
+    # row (opaque "PAYPAL PURCHASE", a bare card line) matched only by amount+date
+    # is weak - surface it for confirmation rather than auto-applying, so an
+    # unrelated same-amount charge is never silently split.
+    if _is_vendor_named(order, best):
+        plan.status = "ready"
+    else:
+        plan.status = "needs-confirm"
+        plan.warnings.append(
+            f"matched {best.get('name','?')[:30]} by amount+date only (not named "
+            f"'{order.vendor}') - confirm this is the right transaction")
+    return plan
+
+
+_APPLICABLE = {"ready", "needs-confirm"}
+
+
+def apply_split(plan: OrderSplitPlan) -> dict:
+    """Apply a plan to the store (snapshot first, so `undo` reverts it).
+
+    Accepts "ready" (vendor-named, high confidence) and "needs-confirm" (matched
+    by amount+date only) - the caller applying a needs-confirm plan is the
+    confirmation. Rejects no-match/ambiguous/no-total.
+    """
+    if plan.status not in _APPLICABLE or not plan.matched_txn_id:
+        raise ValueError(f"cannot apply split: status={plan.status}")
+    ts.snapshot()
+    return ts.split_transaction(plan.matched_txn_id, plan.child_dicts)
