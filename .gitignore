@@ -49,3 +49,12 @@ plaid_pipeline/__pycache__/
 # commit anything dropped into it (financial data). Only .gitkeep is tracked.
 dump/*
 !dump/.gitkeep
+
+# Mailbox — dumped receipt-email samples used for parser development (real email
+# content / financial data). Never commit; the subsystem stores creds in the
+# Windows Credential Manager, not here.
+backend/mailbox/_samples/
+
+# Processed order documents (renamed + raw invoice PDFs, real financial data).
+# Never commit; kept locally for provenance and the split pipeline.
+processed_document/

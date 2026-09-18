@@ -3,6 +3,10 @@
 Everything needed to set up, run, test, secure, and deploy the Mortgage Dashboard.
 If you just want to *use* the app, see the [User Guide](USER_GUIDE.md) instead.
 
+> **Subsystem guides:** the email receipt-ingest effort (Gmail/Proton) has its
+> own living design + troubleshooting doc:
+> [DEVELOPER_GUIDE_MAILBOX.md](DEVELOPER_GUIDE_MAILBOX.md).
+
 ---
 
 ## Stack
