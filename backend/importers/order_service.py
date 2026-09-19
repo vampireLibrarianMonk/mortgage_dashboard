@@ -100,18 +100,48 @@ def _charge_date(t: dict) -> dt.date | None:
     return None
 
 
+import datetime as _dt
+
+# Padding on the charge-date range. A charge can post a day before the order
+# (pre-auth) and a few days after delivery (settlement lag).
+_PAD_BEFORE = 1
+_PAD_AFTER = 3
+
+
+def _charge_window(order: OrderDetail) -> tuple[dt.date | None, dt.date | None]:
+    """The [low, high] date range the bank charge for this order may fall in.
+
+    A retailer can charge anywhere from when the order is placed (charged up
+    front) to when it ships/delivers (charged at ship - Subscribe & Save, slow
+    ship). So the valid range spans order_date .. delivery_date, padded a day
+    before (pre-auth) and a few days after (settlement lag). When there is no
+    delivery date, fall back to order_date + the vendor's forward window.
+    """
+    order_d = order.date
+    deliv = order.delivered_date
+    if order_d is None and deliv is None:
+        return None, None
+    if deliv is not None and order_d is not None:
+        low = min(order_d, deliv) - _dt.timedelta(days=_PAD_BEFORE)
+        high = max(order_d, deliv) + _dt.timedelta(days=_PAD_AFTER)
+        return low, high
+    anchor = order_d or deliv
+    return (anchor - _dt.timedelta(days=_MATCH_DAYS_BEFORE),
+            anchor + _dt.timedelta(days=_days_after(order.vendor)))
+
+
 def _candidate_txns(order: OrderDetail) -> list[dict]:
     """Stored transactions that could plausibly be this order.
 
     Filters: |amount| == total; category not excluded; not an offset deposit; not
-    a payment/transfer/deposit row (by name); and dated on/after the order (with a
-    1-day pre-auth tolerance) up to the forward window. The date-direction guard
-    rules out coincidental same-amount rows that predate the order.
+    a payment/transfer/deposit row (by name); and the charge date within the
+    window around the anchor (delivery date when known, else order date). The
+    date guard rules out coincidental same-amount rows in the wrong timeframe.
     """
     if order.total is None:
         return []
     total = round(order.total, 2)
-    days_after = _days_after(order.vendor)
+    low, high = _charge_window(order)
     out: list[dict] = []
     for t in ts.load_transactions():
         if t.get("category") in _EXCLUDED_MATCH_CATEGORIES:
@@ -122,12 +152,10 @@ def _candidate_txns(order: OrderDetail) -> list[dict]:
             continue
         if abs(round(abs(float(t.get("amount", 0.0))), 2) - total) > _AMOUNT_TOLERANCE:
             continue
-        if order.date is not None:
+        if low is not None and high is not None:
             td = _charge_date(t)  # prefer authorized (charge) date over posted
-            if td is not None:
-                delta = (td - order.date).days
-                if delta < -_MATCH_DAYS_BEFORE or delta > days_after:
-                    continue
+            if td is not None and not (low <= td <= high):
+                continue
         out.append(t)
     return out
 
@@ -149,18 +177,32 @@ def _netted_purchase_ids() -> set[str]:
     return netted
 
 
+def _gap(order: OrderDetail, cand: dict) -> int:
+    """Distance (days) from the charge date to the order's expected charge span
+    [order_date .. delivery_date]. Zero when the charge falls inside the span;
+    otherwise the days to the nearer endpoint. Used for ranking + collisions."""
+    cd = _charge_date(cand)
+    if cd is None:
+        return 999
+    dates = [d for d in (order.date, order.delivered_date) if d is not None]
+    if not dates:
+        return 0
+    lo, hi = min(dates), max(dates)
+    if cd < lo:
+        return (lo - cd).days
+    if cd > hi:
+        return (cd - hi).days
+    return 0
+
+
 def _rank(order: OrderDetail, cand: dict, netted: set[str]) -> tuple:
     """Sort key; lower is better. Prefer (1) a row that carries real net spend
-    (not a netted PayPal purchase), (2) a vendor-named row, (3) closest date."""
+    (not a netted PayPal purchase), (2) a vendor-named row, (3) closest to the
+    anchor date."""
     is_netted = 1 if cand["transaction_id"] in netted else 0
     name = f"{cand.get('name','')} {cand.get('merchant','')}".lower()
     vendor_hit = 0 if order.vendor.lower() in name else 1
-    if order.date is not None:
-        cd = _charge_date(cand)
-        gap = abs((cd - order.date).days) if cd else 999
-    else:
-        gap = 0
-    return (is_netted, vendor_hit, gap)
+    return (is_netted, vendor_hit, _gap(order, cand))
 
 
 def _allocate_children(order: OrderDetail, fallback_category: str = "Uncategorized") -> list[SplitChildPlan]:
@@ -324,13 +366,11 @@ class BatchResult:
 
 
 def _collision_gap(plan: OrderSplitPlan) -> int:
-    """Days between order and matched charge (for picking the best claimant),
-    using the charge's authorized date when present."""
-    o, m = plan.order, plan.matched_txn
-    if not o.date or not m:
+    """Gap from the matched charge to the order's anchor (delivery date when
+    known, else order date), for picking the best claimant."""
+    if not plan.matched_txn:
         return 999
-    cd = _charge_date(m)
-    return abs((cd - o.date).days) if cd else 999
+    return _gap(plan.order, plan.matched_txn)
 
 
 def resolve_batch(plans: list[OrderSplitPlan]) -> BatchResult:

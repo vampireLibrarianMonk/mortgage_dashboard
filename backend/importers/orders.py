@@ -55,6 +55,10 @@ class OrderDetail:
     vendor: str
     order_no: str | None
     date: dt.date | None
+    # When the item shipped/was delivered (retailers bill at ship time, so the
+    # bank charge lands near here, not near the order date). Used to match orders
+    # whose charge posts long after the order (Subscribe & Save, slow ship).
+    delivered_date: dt.date | None = None
     items: list[OrderItem] = field(default_factory=list)
     subtotal: float | None = None
     savings: float = 0.0  # order-level discount (positive number, subtracted)

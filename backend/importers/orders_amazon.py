@@ -65,6 +65,9 @@ _PROMO_RE = re.compile(
 _REWARDS_RE = re.compile(r"Rewards\s*Points:\s*-?\$([\d,]+\.\d{2})", re.IGNORECASE)
 _TOTAL_RE = re.compile(r"Grand\s*Total:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
 _PRICE_LINE_RE = re.compile(r"^\$([\d,]+\.\d{2})\s*$")
+# "Delivered August 2" / "Arriving September 24" - the ship/arrival date. Amazon
+# bills at ship time, so the bank charge lands near here (not the order date).
+_DELIVERED_RE = re.compile(r"(?:Delivered|Arriving)\s+([A-Z][a-z]{2,8}\s+\d{1,2})", re.IGNORECASE)
 
 
 @register_order_reader
@@ -106,9 +109,29 @@ class AmazonOrderReader(OrderReader):
         # Added charges: a driver tip and/or gift wrap.
         order.tip = round((grab(_TIP_RE) or 0.0) + (grab(_GIFTWRAP_RE) or 0.0), 2)
         order.total = grab(_TOTAL_RE)
+        order.delivered_date = _latest_delivery(text, order.date)
 
         order.items = _parse_items(text)
         return order
+
+
+def _latest_delivery(text: str, order_date):
+    """The latest 'Delivered/Arriving <Mon D>' date in the invoice (multi-shipment
+    orders list several; the charge tracks the ship). The year is inferred from
+    the order date, rolling to the next year if the delivery month is earlier
+    (order in Dec, delivered in Jan)."""
+    import datetime as dt
+    from .orders import parse_month_day_year
+    best = None
+    for m in _DELIVERED_RE.finditer(text):
+        frag = m.group(1)  # e.g. "August 2"
+        year = order_date.year if order_date else dt.date.today().year
+        d = parse_month_day_year(f"{frag}, {year}")
+        if d and order_date and d < order_date:
+            d = parse_month_day_year(f"{frag}, {year + 1}")  # rolled into next year
+        if d and (best is None or d > best):
+            best = d
+    return best
 
 
 _BARE_QTY_RE = re.compile(r"^(\d{1,3})$")

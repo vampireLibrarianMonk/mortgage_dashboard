@@ -386,3 +386,43 @@ def test_matcher_uses_authorized_date_to_disambiguate(isolated_store):
     assert b.matched_txn_id == "cB"
     res = order_service.resolve_batch([a, b])
     assert len(res.applied) == 2 and len(res.collided) == 0
+
+
+def _amazon_order_with_delivery(total, placed, delivered):
+    """Minimal Amazon order text with a Delivered line, for span-window tests."""
+    txt = (
+        "Order Summary\n"
+        f"Order placed {placed}  Order # 113-0000000-0000001\n"
+        "Payment method\nPrime Visa****0004\nOrder Summary\n"
+        f"Item(s) Subtotal: ${total:.2f}Shipping & Handling: $0.00"
+        f"Total before tax: ${total:.2f}Estimated tax to becollected: $0.00\n"
+        f"Grand Total: ${total:.2f}\n"
+        f"Delivered {delivered}\n"
+        "Widget\nSold by: Amazon.com\n"
+        f"${total:.2f}\n"
+    )
+    return orders_amazon.AmazonOrderReader().parse_text(txt)
+
+
+def test_charge_window_spans_order_to_delivery(isolated_store):
+    # Charge can land at ORDER time or at DELIVERY time; both must match. Order
+    # placed 07-29, delivered 08-03.
+    ts.save_transactions([
+        # charged at order time (auth 07-29)
+        _row("atorder", "AMAZON MKTPL*X", 10.49, "2026-07-31", authorized_date="2026-07-29"),
+    ])
+    od = _amazon_order_with_delivery(10.49, "July 29, 2026", "August 3")
+    assert od.delivered_date is not None
+    plan = order_service.plan_split(od)
+    assert plan.status == "ready" and plan.matched_txn_id == "atorder"
+
+
+def test_charge_window_matches_ship_time_charge(isolated_store):
+    # Same order shape but the charge lands near DELIVERY (auth 08-02, 4 days
+    # after the order) - still inside the order..delivery span.
+    ts.save_transactions([
+        _row("atship", "AMAZON MKTPL*Y", 10.49, "2026-08-04", authorized_date="2026-08-02"),
+    ])
+    od = _amazon_order_with_delivery(10.49, "July 29, 2026", "August 3")
+    plan = order_service.plan_split(od)
+    assert plan.status == "ready" and plan.matched_txn_id == "atship"
