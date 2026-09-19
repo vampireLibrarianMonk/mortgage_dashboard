@@ -85,6 +85,21 @@ def _txn_name(t: dict) -> str:
     return f"{t.get('name', '')} {t.get('merchant', '')}"
 
 
+def _charge_date(t: dict) -> dt.date | None:
+    """The date the card was actually charged: authorized_date (swipe/ship time)
+    when present, else the posted date. Authorized date tracks the order timing
+    far better than the posted date (which lags 1-3 days), which is what lets two
+    same-priced orders be told apart by when each actually charged."""
+    for key in ("authorized_date", "date"):
+        v = t.get(key)
+        if v:
+            try:
+                return dt.date.fromisoformat(v)
+            except ValueError:
+                continue
+    return None
+
+
 def _candidate_txns(order: OrderDetail) -> list[dict]:
     """Stored transactions that could plausibly be this order.
 
@@ -108,10 +123,7 @@ def _candidate_txns(order: OrderDetail) -> list[dict]:
         if abs(round(abs(float(t.get("amount", 0.0))), 2) - total) > _AMOUNT_TOLERANCE:
             continue
         if order.date is not None:
-            try:
-                td = dt.date.fromisoformat(t["date"])
-            except (ValueError, KeyError):
-                td = None
+            td = _charge_date(t)  # prefer authorized (charge) date over posted
             if td is not None:
                 delta = (td - order.date).days
                 if delta < -_MATCH_DAYS_BEFORE or delta > days_after:
@@ -144,10 +156,8 @@ def _rank(order: OrderDetail, cand: dict, netted: set[str]) -> tuple:
     name = f"{cand.get('name','')} {cand.get('merchant','')}".lower()
     vendor_hit = 0 if order.vendor.lower() in name else 1
     if order.date is not None:
-        try:
-            gap = abs((dt.date.fromisoformat(cand["date"]) - order.date).days)
-        except (ValueError, KeyError):
-            gap = _MATCH_DAY_WINDOW + 1
+        cd = _charge_date(cand)
+        gap = abs((cd - order.date).days) if cd else 999
     else:
         gap = 0
     return (is_netted, vendor_hit, gap)
@@ -314,14 +324,13 @@ class BatchResult:
 
 
 def _collision_gap(plan: OrderSplitPlan) -> int:
-    """Days between order and matched charge (for picking the best claimant)."""
+    """Days between order and matched charge (for picking the best claimant),
+    using the charge's authorized date when present."""
     o, m = plan.order, plan.matched_txn
     if not o.date or not m:
         return 999
-    try:
-        return abs((dt.date.fromisoformat(m["date"]) - o.date).days)
-    except (ValueError, KeyError):
-        return 999
+    cd = _charge_date(m)
+    return abs((cd - o.date).days) if cd else 999
 
 
 def resolve_batch(plans: list[OrderSplitPlan]) -> BatchResult:

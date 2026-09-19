@@ -369,3 +369,20 @@ def test_batch_apply_skips_non_ready(isolated_store):
     res = order_service.batch_apply([pa, pb])
     assert len(res.applied) == 1
     assert len(res.skipped) == 1
+
+
+def test_matcher_uses_authorized_date_to_disambiguate(isolated_store):
+    # Two same-priced orders + two charges. By POSTED date both charges look
+    # in-window for both orders, but authorized_date pins each order to its own
+    # charge: order A (placed 08-01) -> charge authorized 08-01; order B (placed
+    # 08-05) -> charge authorized 08-05. No collision.
+    ts.save_transactions([
+        _row("cA", "Walmart", 25.00, "2026-08-03", authorized_date="2026-08-01"),
+        _row("cB", "Walmart", 25.00, "2026-08-07", authorized_date="2026-08-05"),
+    ])
+    a = order_service.plan_split(_walmart_order(25.00, "Aug 01, 2026"))
+    b = order_service.plan_split(_walmart_order(25.00, "Aug 05, 2026"))
+    assert a.matched_txn_id == "cA"
+    assert b.matched_txn_id == "cB"
+    res = order_service.resolve_batch([a, b])
+    assert len(res.applied) == 2 and len(res.collided) == 0
