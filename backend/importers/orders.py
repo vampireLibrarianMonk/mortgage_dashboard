@@ -68,6 +68,13 @@ class OrderDetail:
     total: float | None = None
     seller: str = ""  # marketplace seller when present (e.g. "Ballucci")
     source_file: str = ""
+    # Grocery orders (Whole Foods / Amazon Fresh) charge under a different
+    # merchant name and the final amount drifts from the estimate (weight-priced
+    # produce, substitutions). Flagged so the matcher can allow a small amount
+    # tolerance, guarded by an exact date match, and scale the split to the real
+    # charge. `match_names` are extra merchant-name aliases the charge may use.
+    grocery: bool = False
+    match_names: tuple[str, ...] = ()
 
     @property
     def item_count(self) -> int:

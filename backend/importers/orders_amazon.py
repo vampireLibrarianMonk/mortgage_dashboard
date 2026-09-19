@@ -68,6 +68,10 @@ _PRICE_LINE_RE = re.compile(r"^\$([\d,]+\.\d{2})\s*$")
 # "Delivered August 2" / "Arriving September 24" - the ship/arrival date. Amazon
 # bills at ship time, so the bank charge lands near here (not the order date).
 _DELIVERED_RE = re.compile(r"(?:Delivered|Arriving)\s+([A-Z][a-z]{2,8}\s+\d{1,2})", re.IGNORECASE)
+# Whole Foods / Amazon Fresh grocery pickup orders: the charge posts under the
+# store name ("Whole Foods" / "Amazon Fresh"), not "Amazon", and the final amount
+# drifts from the estimate (weight-priced produce, substitutions).
+_GROCERY_RE = re.compile(r"Whole\s*Foods|Amazon\s*Fresh|Purchased at Whole Foods", re.IGNORECASE)
 
 
 @register_order_reader
@@ -110,6 +114,14 @@ class AmazonOrderReader(OrderReader):
         order.tip = round((grab(_TIP_RE) or 0.0) + (grab(_GIFTWRAP_RE) or 0.0), 2)
         order.total = grab(_TOTAL_RE)
         order.delivered_date = _latest_delivery(text, order.date)
+
+        # Whole Foods / Amazon Fresh grocery pickup: charge posts under the store
+        # name and the amount drifts from the estimate. Flag it + provide the
+        # merchant-name aliases the charge may use so the matcher can pair it with
+        # a small amount tolerance guarded by an exact date match.
+        if _GROCERY_RE.search(text):
+            order.grocery = True
+            order.match_names = ("whole foods", "amazon fresh", "wholefds", "amzn fresh")
 
         order.items = _parse_items(text)
         return order

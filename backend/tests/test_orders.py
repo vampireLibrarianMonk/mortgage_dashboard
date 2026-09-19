@@ -426,3 +426,46 @@ def test_charge_window_matches_ship_time_charge(isolated_store):
     od = _amazon_order_with_delivery(10.49, "July 29, 2026", "August 3")
     plan = order_service.plan_split(od)
     assert plan.status == "ready" and plan.matched_txn_id == "atship"
+
+
+def test_grocery_matches_drifted_whole_foods_charge(isolated_store):
+    # A Whole Foods pickup order estimated $16.67 but charged $16.84, posting
+    # under "Whole Foods" (not Amazon). Grocery matching pairs it (exact date +
+    # small drift) and scales children to the ACTUAL charge.
+    ts.save_transactions([
+        _row("wf", "Whole Foods", 16.84, "2026-08-20", authorized_date="2026-08-19"),
+    ])
+    txt = (
+        "Order Summary\nOrder placed August 19, 2026  Order # 113-0000000-0000003\n"
+        "Purchased at Whole Foods Market\n"
+        "Item(s) Subtotal: $16.67Shipping & Handling: $0.00"
+        "Total before tax: $16.67Estimated tax to becollected: $0.00\nGrand Total: $16.67\n"
+        "365 by Whole Foods Market Butter Pecan Ice Cream\n$3.59\n"
+        "Meyenberg Goat Milk Kefir\n$9.49\n"
+        "365 Brownie Batter Ice Cream\n$3.59\n"
+    )
+    od = orders_amazon.AmazonOrderReader().parse_text(txt)
+    assert od.grocery is True
+    plan = order_service.plan_split(od)
+    assert plan.status == "ready"
+    assert plan.matched_txn_id == "wf"
+    # children sum to the CHARGE ($16.84), not the estimate ($16.67)
+    assert round(sum(c.amount for c in plan.children), 2) == 16.84
+
+
+def test_already_applied_order_not_rematched(isolated_store):
+    # Once an order is itemized (its split parent stamped with the order_no),
+    # re-planning must NOT match it to a different same-amount charge.
+    ts.save_transactions([_row("w1", "Walmart", 44.51, "2026-07-14")])
+    od = orders_walmart.WalmartOrderReader().parse_text(WALMART_SAVINGS)  # order# 200000000000003
+    plan = order_service.plan_split(od)
+    assert plan.status == "ready"
+    order_service.apply_split(plan)
+    # a coincidental same-amount row appears later
+    rows = ts.load_transactions()
+    rows.append(_row("other", "SOME OTHER STORE", 44.51, "2026-07-15"))
+    ts.save_transactions(rows)
+    # re-plan the same order -> already-applied, NOT matched to "other"
+    plan2 = order_service.plan_split(od)
+    assert plan2.status == "already-applied"
+    assert plan2.matched_txn_id is None

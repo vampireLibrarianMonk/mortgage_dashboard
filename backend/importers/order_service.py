@@ -40,6 +40,11 @@ _MATCH_DAYS_AFTER_BY_VENDOR = {"walmart": 7, "amazon": 3}
 _DEFAULT_MATCH_DAYS_AFTER = 3
 _MATCH_DAYS_BEFORE = 1  # a charge may pre-auth at most 1 day before the order
 _AMOUNT_TOLERANCE = 0.01
+# Grocery (Whole Foods / Amazon Fresh) final charge drifts from the estimate
+# (weight-priced produce, substitutions). Allow the greater of a percent or a
+# flat dollar amount - but only on a vendor/alias-named, in-span charge.
+_GROCERY_DRIFT_PCT = 0.08
+_GROCERY_DRIFT_ABS = 3.00
 
 
 def _days_after(vendor: str) -> int:
@@ -142,6 +147,13 @@ def _candidate_txns(order: OrderDetail) -> list[dict]:
         return []
     total = round(order.total, 2)
     low, high = _charge_window(order)
+    # Grocery orders (Whole Foods / Amazon Fresh) charge under the store name and
+    # the final amount drifts from the estimate (weight/substitutions). Allow a
+    # small amount tolerance for those, but REQUIRE the charge to be
+    # vendor/alias-named AND dated within the span - the tighter identity guards
+    # keep the looser amount from admitting an unrelated same-ish-amount row.
+    amt_tol = max(_AMOUNT_TOLERANCE, round(total * _GROCERY_DRIFT_PCT, 2), _GROCERY_DRIFT_ABS) \
+        if order.grocery else _AMOUNT_TOLERANCE
     out: list[dict] = []
     for t in ts.load_transactions():
         if t.get("category") in _EXCLUDED_MATCH_CATEGORIES:
@@ -150,7 +162,10 @@ def _candidate_txns(order: OrderDetail) -> list[dict]:
             continue
         if _NON_PURCHASE_RE.search(_txn_name(t)):
             continue
-        if abs(round(abs(float(t.get("amount", 0.0))), 2) - total) > _AMOUNT_TOLERANCE:
+        if abs(round(abs(float(t.get("amount", 0.0))), 2) - total) > amt_tol:
+            continue
+        # For grocery, the looser amount is only safe on a vendor/alias-named row.
+        if order.grocery and not _name_matches(order, t):
             continue
         if low is not None and high is not None:
             td = _charge_date(t)  # prefer authorized (charge) date over posted
@@ -160,8 +175,17 @@ def _candidate_txns(order: OrderDetail) -> list[dict]:
     return out
 
 
+def _name_matches(order: OrderDetail, cand: dict) -> bool:
+    """True if the charge's name contains the vendor OR any of the order's match
+    aliases (e.g. a Whole Foods charge for an Amazon grocery order)."""
+    name = _txn_name(cand).lower()
+    if order.vendor.lower() in name:
+        return True
+    return any(alias in name for alias in order.match_names)
+
+
 def _is_vendor_named(order: OrderDetail, cand: dict) -> bool:
-    return order.vendor.lower() in _txn_name(cand).lower()
+    return _name_matches(order, cand)
 
 
 def _netted_purchase_ids() -> set[str]:
@@ -200,26 +224,30 @@ def _rank(order: OrderDetail, cand: dict, netted: set[str]) -> tuple:
     (not a netted PayPal purchase), (2) a vendor-named row, (3) closest to the
     anchor date."""
     is_netted = 1 if cand["transaction_id"] in netted else 0
-    name = f"{cand.get('name','')} {cand.get('merchant','')}".lower()
-    vendor_hit = 0 if order.vendor.lower() in name else 1
+    vendor_hit = 0 if _name_matches(order, cand) else 1
     return (is_netted, vendor_hit, _gap(order, cand))
 
 
-def _allocate_children(order: OrderDetail, fallback_category: str = "Uncategorized") -> list[SplitChildPlan]:
+def _allocate_children(order: OrderDetail, fallback_category: str = "Uncategorized",
+                       target_total: float | None = None) -> list[SplitChildPlan]:
     """One child per line item; shipping + tax - savings split EQUALLY across the
     line items (each item carries the same share of fees, regardless of price) so
-    the children sum to the order total.
+    the children sum to `target_total` (defaults to the order total).
+
+    `target_total` lets a grocery order's children sum to the ACTUAL bank charge
+    when it drifted from the estimate (weight/substitution). The per-item fee
+    bucket (target - item_sum) absorbs the drift; the last child takes the
+    rounding remainder so the children sum exactly to the target.
 
     Equal (not proportional) by design: for a household budget the fee amounts are
     small and it keeps the split simple and consistent for both shipping and tax.
-    Any rounding remainder lands on the last child so the children sum exactly.
 
     Category precedence per item: (1) an item-name merchant rule if one matches,
     else (2) the fallback - normally the parent transaction's existing category,
     so splitting an already-categorized row (e.g. a Household Walmart charge)
     keeps that categorization on its items instead of dropping to Uncategorized.
     """
-    total = round(order.total or 0.0, 2)
+    total = round(target_total if target_total is not None else (order.total or 0.0), 2)
     items = order.items
     rules = ts.load_rules()
     n = len(items)
@@ -260,12 +288,24 @@ def _category_for_item(item_name: str, rules: list[dict]) -> str | None:
     return ts._match_rule(pseudo, rules)
 
 
+def _applied_order_nos() -> set[str]:
+    """Order numbers already itemized (stamped on an existing Split parent). An
+    order is itemized once - re-planning it must not re-match it to a different
+    (wrong) charge after its real charge is already a Split."""
+    return {t["split_order_no"] for t in ts.load_transactions() if t.get("split_order_no")}
+
+
 def plan_split(order: OrderDetail) -> OrderSplitPlan:
     """Match the order to a transaction and build the split plan (writes nothing)."""
     plan = OrderSplitPlan(order=order)
     if order.total is None:
         plan.status = "no-total"
         plan.warnings.append("order has no parseable total")
+        return plan
+
+    if order.order_no and order.order_no in _applied_order_nos():
+        plan.status = "already-applied"
+        plan.warnings.append(f"order {order.order_no} is already itemized")
         return plan
 
     cands = _candidate_txns(order)
@@ -289,8 +329,17 @@ def plan_split(order: OrderDetail) -> OrderSplitPlan:
 
     plan.matched_txn = best
     plan.matched_txn_id = best["transaction_id"]
-    plan.children = _allocate_children(order, _fallback_category(best))
+    # For a grocery order the charge can drift from the estimate; scale the split
+    # so children sum to the ACTUAL charge (what left the account), not the PDF
+    # estimate.
+    charge_amt = round(abs(float(best.get("amount", 0.0))), 2)
+    target = charge_amt if order.grocery else None
+    plan.children = _allocate_children(order, _fallback_category(best), target_total=target)
     plan.warnings.extend(order.sanity())
+    if order.grocery and abs(charge_amt - round(order.total, 2)) > _AMOUNT_TOLERANCE:
+        plan.warnings.append(
+            f"grocery amount drift: estimate ${order.total:.2f} -> charged "
+            f"${charge_amt:.2f} (weight/substitution); split scaled to the charge")
 
     # Confidence: a vendor-named row (e.g. "Walmart") is a strong match. A generic
     # row (opaque "PAYPAL PURCHASE", a bare card line) matched only by amount+date
@@ -353,7 +402,8 @@ def apply_split(plan: OrderSplitPlan) -> dict:
     if plan.status not in _APPLICABLE or not plan.matched_txn_id:
         raise ValueError(f"cannot apply split: status={plan.status}")
     ts.snapshot()
-    return ts.split_transaction(plan.matched_txn_id, plan.child_dicts)
+    return ts.split_transaction(plan.matched_txn_id, plan.child_dicts,
+                                order_no=plan.order.order_no)
 
 
 @dataclass
@@ -415,7 +465,8 @@ def batch_apply(plans: list[OrderSplitPlan]) -> BatchResult:
     ts.snapshot()
     for order, plan in list(res.applied):
         try:
-            ts.split_transaction(plan.matched_txn_id, plan.child_dicts)
+            ts.split_transaction(plan.matched_txn_id, plan.child_dicts,
+                                 order_no=order.order_no)
         except Exception as e:  # noqa: BLE001
             res.errors.append((order, f"{type(e).__name__}: {e}"))
     return res

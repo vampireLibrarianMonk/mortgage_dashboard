@@ -371,14 +371,18 @@ def _normalize_children(children: list[dict]) -> list[dict]:
     return out
 
 
-def split_transaction(transaction_id: str, children: list[dict]) -> dict:
+def split_transaction(transaction_id: str, children: list[dict],
+                      order_no: str | None = None) -> dict:
     """Itemize one transaction into per-item children.
 
     The children's amounts must sum to the parent's amount (within a cent). On
     success the parent is marked category "Split" and gains a `split_children`
     list; its year/month/amount are untouched so it still reconciles and dedups.
-    Returns the updated parent. Raises ValueError on a bad sum / unknown category
-    / missing transaction. Caller is responsible for snapshot() (undo support).
+    When `order_no` is given (the retailer order this split came from), it is
+    stamped as `split_order_no` so the pipeline can tell an order was already
+    itemized and never re-match it to a different charge. Returns the updated
+    parent. Raises ValueError on a bad sum / unknown category / missing
+    transaction. Caller is responsible for snapshot() (undo support).
     """
     kids = _normalize_children(children)
     if not kids:
@@ -399,6 +403,8 @@ def split_transaction(transaction_id: str, children: list[dict]) -> dict:
 
     parent["category"] = SPLIT_CATEGORY
     parent["split_children"] = kids
+    if order_no:
+        parent["split_order_no"] = order_no
     save_transactions(txns)
     return parent
 
