@@ -311,3 +311,61 @@ def test_equal_allocation_sums_to_total(isolated_store):
     # equal-share signature: the cheap item's fee bump == the mid item's fee bump
     fee_cheap = round(4.94 - 3.97, 2)
     assert abs(fee_cheap - 2.92 / 3) < 0.02
+
+
+# --- collision guard / batch apply ---
+
+def _walmart_order(total, date):
+    """A minimal single-item Walmart order at a given total/date, for batch tests."""
+    txt = (
+        "Invoice\n"
+        f"{date} order\n"
+        "Order# 2000000-00000001\n"
+        f"Widget Thing Qty 1 ${total:.2f}\n"
+        f"Subtotal (1 item) ${total:.2f}\n"
+        f"Total ${total:.2f}\n"
+    )
+    return orders_walmart.WalmartOrderReader().parse_text(txt)
+
+
+def test_resolve_batch_prevents_double_split(isolated_store):
+    # Two same-priced orders, only ONE matching charge in-window -> both match it;
+    # the closer-dated order wins, the other is set aside as a collision.
+    ts.save_transactions([_row("w", "Walmart", 25.00, "2026-08-11")])
+    near = _walmart_order(25.00, "Aug 10, 2026")   # gap 1
+    far = _walmart_order(25.00, "Aug 05, 2026")    # gap 6 (still within walmart 7d)
+    p_near = order_service.plan_split(near)
+    p_far = order_service.plan_split(far)
+    assert p_near.status == "ready" and p_far.status == "ready"
+    assert p_near.matched_txn_id == p_far.matched_txn_id == "w"  # both claim the same row
+    res = order_service.resolve_batch([p_far, p_near])
+    assert len(res.applied) == 1
+    assert len(res.collided) == 1
+    # the closer-dated (near, gap 1) wins
+    assert res.applied[0][1].order.date.isoformat() == "2026-08-10"
+
+
+def test_batch_apply_one_snapshot_undoes_all(isolated_store):
+    ts.save_transactions([
+        _row("a", "Walmart", 10.00, "2026-08-02"),
+        _row("b", "Walmart", 20.00, "2026-08-02"),
+    ])
+    pa = order_service.plan_split(_walmart_order(10.00, "Aug 01, 2026"))
+    pb = order_service.plan_split(_walmart_order(20.00, "Aug 01, 2026"))
+    res = order_service.batch_apply([pa, pb])
+    assert len(res.applied) == 2 and not res.errors
+    rows = {t["transaction_id"]: t for t in ts.load_transactions()}
+    assert rows["a"]["category"] == "Split" and rows["b"]["category"] == "Split"
+    # one undo reverts the whole batch
+    assert ts.undo() is True
+    rows = {t["transaction_id"]: t for t in ts.load_transactions()}
+    assert rows["a"]["category"] != "Split" and rows["b"]["category"] != "Split"
+
+
+def test_batch_apply_skips_non_ready(isolated_store):
+    ts.save_transactions([_row("a", "Walmart", 10.00, "2026-08-02")])
+    pa = order_service.plan_split(_walmart_order(10.00, "Aug 01, 2026"))       # ready
+    pb = order_service.plan_split(_walmart_order(999.00, "Aug 01, 2026"))      # no-match
+    res = order_service.batch_apply([pa, pb])
+    assert len(res.applied) == 1
+    assert len(res.skipped) == 1

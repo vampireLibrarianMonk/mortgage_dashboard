@@ -302,3 +302,71 @@ def apply_split(plan: OrderSplitPlan) -> dict:
         raise ValueError(f"cannot apply split: status={plan.status}")
     ts.snapshot()
     return ts.split_transaction(plan.matched_txn_id, plan.child_dicts)
+
+
+@dataclass
+class BatchResult:
+    """Outcome of a collision-guarded batch apply/preview."""
+    applied: list = field(default_factory=list)      # (order, plan) actually split
+    collided: list = field(default_factory=list)     # (order, plan) lost a collision
+    skipped: list = field(default_factory=list)      # (order, plan) not ready/needs-confirm
+    errors: list = field(default_factory=list)        # (order, message)
+
+
+def _collision_gap(plan: OrderSplitPlan) -> int:
+    """Days between order and matched charge (for picking the best claimant)."""
+    o, m = plan.order, plan.matched_txn
+    if not o.date or not m:
+        return 999
+    try:
+        return abs((dt.date.fromisoformat(m["date"]) - o.date).days)
+    except (ValueError, KeyError):
+        return 999
+
+
+def resolve_batch(plans: list[OrderSplitPlan]) -> BatchResult:
+    """Resolve a set of plans so each transaction is claimed at most once.
+
+    When two orders match the same transaction (repeat-priced purchases where only
+    one charge is in the matcher's window), the one with the closer order->charge
+    date wins; the other is set aside as a collision for manual pairing rather
+    than double-splitting the same charge. Writes nothing.
+    """
+    res = BatchResult()
+    claimants: dict[str, OrderSplitPlan] = {}
+    for plan in plans:
+        if plan.status not in _APPLICABLE or not plan.matched_txn_id:
+            res.skipped.append((plan.order, plan))
+            continue
+        tid = plan.matched_txn_id
+        cur = claimants.get(tid)
+        if cur is None:
+            claimants[tid] = plan
+        else:
+            # keep the closer-dated match; bump the other to collided
+            if _collision_gap(plan) < _collision_gap(cur):
+                res.collided.append((cur.order, cur))
+                claimants[tid] = plan
+            else:
+                res.collided.append((plan.order, plan))
+    res.applied = [(p.order, p) for p in claimants.values()]
+    return res
+
+
+def batch_apply(plans: list[OrderSplitPlan]) -> BatchResult:
+    """Collision-guard a set of plans, then apply the winners in ONE snapshot.
+
+    A single ts.snapshot() wraps the whole batch, so one `undo` reverts every
+    split applied here. Collisions and non-applicable plans are reported, not
+    written. Returns the BatchResult (with any per-row errors captured).
+    """
+    res = resolve_batch(plans)
+    if not res.applied:
+        return res
+    ts.snapshot()
+    for order, plan in list(res.applied):
+        try:
+            ts.split_transaction(plan.matched_txn_id, plan.child_dicts)
+        except Exception as e:  # noqa: BLE001
+            res.errors.append((order, f"{type(e).__name__}: {e}"))
+    return res
