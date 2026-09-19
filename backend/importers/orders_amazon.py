@@ -54,8 +54,15 @@ _FREESHIP_RE = re.compile(
     re.IGNORECASE)
 # "Driver tip: $5.00" / "Tip: $5.00" is a real added charge included in the total.
 _TIP_RE = re.compile(r"(?:Driver\s*)?tip:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
+# "Gift Wrap: $7.98" is an added charge included in the total.
+_GIFTWRAP_RE = re.compile(r"Gift\s*Wrap:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
 _TAX_RE = re.compile(r"tax\s*to\s*be\s*collected:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
-_PROMO_RE = re.compile(r"(?:Promotion|Discount|Coupon)[^$]*-?\$([\d,]+\.\d{2})", re.IGNORECASE)
+_PROMO_RE = re.compile(
+    r"(?:Promotion|Discount|Coupon|Subscribe\s*&\s*Save)[^$]*-?\$([\d,]+\.\d{2})",
+    re.IGNORECASE)
+# "Rewards Points: -$117.33" - Amazon Visa reward points applied as a credit
+# against the grand total (a discount).
+_REWARDS_RE = re.compile(r"Rewards\s*Points:\s*-?\$([\d,]+\.\d{2})", re.IGNORECASE)
 _TOTAL_RE = re.compile(r"Grand\s*Total:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
 _PRICE_LINE_RE = re.compile(r"^\$([\d,]+\.\d{2})\s*$")
 
@@ -93,8 +100,11 @@ class AmazonOrderReader(OrderReader):
         free_ship = grab(_FREESHIP_RE) or 0.0
         order.shipping = round(shipping - free_ship, 2)  # net of any free-shipping credit
         order.tax = grab(_TAX_RE) or 0.0
-        order.savings = grab(_PROMO_RE) or 0.0
-        order.tip = grab(_TIP_RE) or 0.0
+        # Credits (subtracted): a promo/discount plus any Amazon Visa reward points
+        # applied against the total.
+        order.savings = round((grab(_PROMO_RE) or 0.0) + (grab(_REWARDS_RE) or 0.0), 2)
+        # Added charges: a driver tip and/or gift wrap.
+        order.tip = round((grab(_TIP_RE) or 0.0) + (grab(_GIFTWRAP_RE) or 0.0), 2)
         order.total = grab(_TOTAL_RE)
 
         order.items = _parse_items(text)
