@@ -28,12 +28,22 @@ from .orders import OrderDetail
 
 import re
 
-# How far apart (days) the order date and a transaction date may be to match.
-# A charge posts ON or AFTER the order date, occasionally a day early (pre-auth),
-# and up to a few days later; a charge well before the order is not this order.
-_MATCH_DAYS_AFTER = 6   # charge may post up to N days after the order
-_MATCH_DAYS_BEFORE = 1  # ...or at most 1 day before (pre-auth tolerance)
+# How far AFTER the order date a matching bank charge may post - and it is
+# vendor-specific, because it depends on the payment rail:
+#   * PayPal-funded vendors (Walmart): the charge is a PAYPAL PURCHASE that posts
+#     to the bank up to ~1 week after the order (PayPal -> bank settlement lag).
+#   * Card-funded vendors (Amazon on the Prime Visa): the charge posts within a
+#     few days. Amazon amounts repeat (same item re-bought), so a tight window is
+#     the main defense against pairing an order with an unrelated same-amount
+#     charge - a wide window here re-introduces false matches.
+_MATCH_DAYS_AFTER_BY_VENDOR = {"walmart": 7, "amazon": 3}
+_DEFAULT_MATCH_DAYS_AFTER = 3
+_MATCH_DAYS_BEFORE = 1  # a charge may pre-auth at most 1 day before the order
 _AMOUNT_TOLERANCE = 0.01
+
+
+def _days_after(vendor: str) -> int:
+    return _MATCH_DAYS_AFTER_BY_VENDOR.get(vendor.lower(), _DEFAULT_MATCH_DAYS_AFTER)
 # Categories that mean "this row does not carry real budget spend" - never split.
 _EXCLUDED_MATCH_CATEGORIES = {"Ignore", "Split"}
 
@@ -86,6 +96,7 @@ def _candidate_txns(order: OrderDetail) -> list[dict]:
     if order.total is None:
         return []
     total = round(order.total, 2)
+    days_after = _days_after(order.vendor)
     out: list[dict] = []
     for t in ts.load_transactions():
         if t.get("category") in _EXCLUDED_MATCH_CATEGORIES:
@@ -103,7 +114,7 @@ def _candidate_txns(order: OrderDetail) -> list[dict]:
                 td = None
             if td is not None:
                 delta = (td - order.date).days
-                if delta < -_MATCH_DAYS_BEFORE or delta > _MATCH_DAYS_AFTER:
+                if delta < -_MATCH_DAYS_BEFORE or delta > days_after:
                     continue
         out.append(t)
     return out
@@ -142,34 +153,52 @@ def _rank(order: OrderDetail, cand: dict, netted: set[str]) -> tuple:
     return (is_netted, vendor_hit, gap)
 
 
-def _allocate_children(order: OrderDetail) -> list[SplitChildPlan]:
-    """One child per item; shipping+tax-savings distributed proportionally by item
-    price so the children sum to the order total. Categories from item-name rules.
+def _allocate_children(order: OrderDetail, fallback_category: str = "Uncategorized") -> list[SplitChildPlan]:
+    """One child per line item; shipping + tax - savings split EQUALLY across the
+    line items (each item carries the same share of fees, regardless of price) so
+    the children sum to the order total.
+
+    Equal (not proportional) by design: for a household budget the fee amounts are
+    small and it keeps the split simple and consistent for both shipping and tax.
+    Any rounding remainder lands on the last child so the children sum exactly.
+
+    Category precedence per item: (1) an item-name merchant rule if one matches,
+    else (2) the fallback - normally the parent transaction's existing category,
+    so splitting an already-categorized row (e.g. a Household Walmart charge)
+    keeps that categorization on its items instead of dropping to Uncategorized.
     """
     total = round(order.total or 0.0, 2)
     items = order.items
     rules = ts.load_rules()
+    n = len(items)
 
     base_sum = round(sum(i.price for i in items), 2)
-    # The amount to spread across items on top of their own prices (fees net of
-    # discounts). Can be negative if savings exceed shipping+tax.
+    # Fees net of discounts (shipping + tax - savings), spread EQUALLY per item.
     extra = round(total - base_sum, 2)
+    per_item_fee = extra / n if n else 0.0
 
     children: list[SplitChildPlan] = []
     running = 0.0
     for idx, it in enumerate(items):
-        share = (it.price / base_sum) if base_sum else (1.0 / len(items))
-        alloc = it.price + extra * share
-        # Put any rounding remainder on the last child so children sum exactly.
-        if idx == len(items) - 1:
+        # Last child absorbs any rounding remainder so children sum exactly.
+        if idx == n - 1:
             amount = round(total - running, 2)
         else:
-            amount = round(alloc, 2)
+            amount = round(it.price + per_item_fee, 2)
             running = round(running + amount, 2)
-        cat = _category_for_item(it.name, rules) or "Uncategorized"
+        cat = _category_for_item(it.name, rules) or fallback_category
         note = it.name if it.qty <= 1 else f"{it.name} (x{it.qty})"
         children.append(SplitChildPlan(amount=amount, category=cat, note=note))
     return children
+
+
+def _fallback_category(txn: dict) -> str:
+    """Category a split child inherits when no item-rule matches: the parent's
+    existing category, unless it is a non-informative state."""
+    cat = txn.get("category")
+    if cat and cat not in ("Uncategorized", "Split"):
+        return cat
+    return "Uncategorized"
 
 
 def _category_for_item(item_name: str, rules: list[dict]) -> str | None:
@@ -208,7 +237,7 @@ def plan_split(order: OrderDetail) -> OrderSplitPlan:
 
     plan.matched_txn = best
     plan.matched_txn_id = best["transaction_id"]
-    plan.children = _allocate_children(order)
+    plan.children = _allocate_children(order, _fallback_category(best))
     plan.warnings.extend(order.sanity())
 
     # Confidence: a vendor-named row (e.g. "Walmart") is a strong match. A generic
@@ -222,6 +251,40 @@ def plan_split(order: OrderDetail) -> OrderSplitPlan:
         plan.warnings.append(
             f"matched {best.get('name','?')[:30]} by amount+date only (not named "
             f"'{order.vendor}') - confirm this is the right transaction")
+    return plan
+
+
+def plan_manual_split(order: OrderDetail, transaction_id: str) -> OrderSplitPlan:
+    """Build a split plan against a SPECIFIC transaction, bypassing the matcher.
+
+    For the case where the user knows the right transaction but the auto-matcher
+    won't pair them (e.g. an Amazon item that shipped - and so was charged - well
+    after the order date, outside the window). Still validates that the chosen
+    transaction's amount equals the order total, so a typo can't split the wrong
+    amount. Status "ready" on success, else no-match/no-total.
+    """
+    plan = OrderSplitPlan(order=order)
+    if order.total is None:
+        plan.status = "no-total"
+        plan.warnings.append("order has no parseable total")
+        return plan
+    by_id = {t["transaction_id"]: t for t in ts.load_transactions()}
+    txn = by_id.get(transaction_id)
+    if txn is None:
+        plan.status = "no-match"
+        plan.warnings.append(f"no transaction with id {transaction_id}")
+        return plan
+    if abs(round(abs(float(txn.get("amount", 0.0))), 2) - round(order.total, 2)) > _AMOUNT_TOLERANCE:
+        plan.status = "no-match"
+        plan.warnings.append(
+            f"transaction amount {txn.get('amount')} != order total {order.total} "
+            "- refusing to split a mismatched amount")
+        return plan
+    plan.matched_txn = txn
+    plan.matched_txn_id = transaction_id
+    plan.children = _allocate_children(order, _fallback_category(txn))
+    plan.warnings.extend(order.sanity())
+    plan.status = "ready"
     return plan
 
 

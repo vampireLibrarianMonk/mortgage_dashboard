@@ -295,12 +295,19 @@ def test_apply_rejects_unmatched(isolated_store):
         order_service.apply_split(plan)
 
 
-def test_proportional_allocation_sums_to_total(isolated_store):
-    # Multi-item order: shipping/tax fold into items, children sum to total.
-    ts.save_transactions([_row("m1", "Walmart", 51.54, "2026-09-06")])
-    od = orders_amazon.AmazonOrderReader().parse_text(AMAZON_MULTI)
-    # Re-point vendor match: seed a vendor-named row so status is ready.
+def test_equal_allocation_sums_to_total(isolated_store):
+    # Multi-item order: shipping+tax split EQUALLY per line item; children sum to total.
+    # AMAZON_MULTI: items 29.71 / 3.97 / 14.94 (base 48.62), total 51.54 -> fees 2.92,
+    # split 3 ways = ~0.9733 each. Non-last children = item + equal fee share.
     ts.save_transactions([_row("m1", "amazon order", 51.54, "2026-09-06")])
+    od = orders_amazon.AmazonOrderReader().parse_text(AMAZON_MULTI)
     plan = order_service.plan_split(od)
     assert plan.status == "ready"
     assert round(sum(c.amount for c in plan.children), 2) == 51.54
+    # First two children carry item price + an equal fee share (~0.97), NOT a
+    # price-weighted share. 29.71 + 0.97 ~ 30.68; 3.97 + 0.97 ~ 4.94.
+    amts = sorted(round(c.amount, 2) for c in plan.children)
+    assert amts[0] == 4.94  # 3.97 + equal fee share
+    # equal-share signature: the cheap item's fee bump == the mid item's fee bump
+    fee_cheap = round(4.94 - 3.97, 2)
+    assert abs(fee_cheap - 2.92 / 3) < 0.02

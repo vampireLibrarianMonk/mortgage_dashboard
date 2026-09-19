@@ -60,6 +60,7 @@ class OrderDetail:
     savings: float = 0.0  # order-level discount (positive number, subtracted)
     shipping: float = 0.0
     tax: float = 0.0
+    tip: float = 0.0  # driver/delivery tip - an added charge (e.g. Amazon grocery)
     total: float | None = None
     seller: str = ""  # marketplace seller when present (e.g. "Ballucci")
     source_file: str = ""
@@ -80,10 +81,12 @@ class OrderDetail:
             if abs(s - self.subtotal) > 0.01:
                 warns.append(f"item prices sum to {s:.2f} but subtotal is {self.subtotal:.2f}")
         if self.total is not None and self.subtotal is not None:
-            expected = round(self.subtotal - self.savings + self.shipping + self.tax, 2)
+            expected = round(self.subtotal - self.savings + self.shipping
+                             + self.tax + self.tip, 2)
             if abs(expected - self.total) > 0.01:
                 warns.append(
-                    f"subtotal-savings+shipping+tax = {expected:.2f} but total is {self.total:.2f}")
+                    f"subtotal-savings+shipping+tax+tip = {expected:.2f} "
+                    f"but total is {self.total:.2f}")
         return warns
 
 

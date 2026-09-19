@@ -47,8 +47,13 @@ _ORDER_RE = re.compile(r"Order\s*#\s*([0-9\-]+)")
 # Labeled amounts, searched anywhere (fields are concatenated without spaces).
 _SUBTOTAL_RE = re.compile(r"Item\(s\)\s*Subtotal:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
 _SHIPPING_RE = re.compile(r"Shipping\s*&\s*Handling:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
-# "Free Shipping: -$2.99" credits back the shipping charge (net shipping = 0).
-_FREESHIP_RE = re.compile(r"Free\s*Shipping:\s*-?\$([\d,]+\.\d{2})", re.IGNORECASE)
+# A shipping credit that offsets the S&H charge. Covers "Free Shipping: -$2.99"
+# and "$0 delivery on your 1st order: -$9.95" and similar free-delivery lines.
+_FREESHIP_RE = re.compile(
+    r"(?:Free\s*Shipping|\$0\s*delivery[^:]*|Free\s*delivery[^:]*):\s*-?\$([\d,]+\.\d{2})",
+    re.IGNORECASE)
+# "Driver tip: $5.00" / "Tip: $5.00" is a real added charge included in the total.
+_TIP_RE = re.compile(r"(?:Driver\s*)?tip:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
 _TAX_RE = re.compile(r"tax\s*to\s*be\s*collected:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
 _PROMO_RE = re.compile(r"(?:Promotion|Discount|Coupon)[^$]*-?\$([\d,]+\.\d{2})", re.IGNORECASE)
 _TOTAL_RE = re.compile(r"Grand\s*Total:\s*\$([\d,]+\.\d{2})", re.IGNORECASE)
@@ -89,6 +94,7 @@ class AmazonOrderReader(OrderReader):
         order.shipping = round(shipping - free_ship, 2)  # net of any free-shipping credit
         order.tax = grab(_TAX_RE) or 0.0
         order.savings = grab(_PROMO_RE) or 0.0
+        order.tip = grab(_TIP_RE) or 0.0
         order.total = grab(_TOTAL_RE)
 
         order.items = _parse_items(text)
