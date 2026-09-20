@@ -60,16 +60,32 @@ Key refinements (each added measurable coverage):
 Fee handling: shipping + tax − discounts split **equally** per line item;
 children sum exactly to the order value (last child absorbs rounding).
 
+**Goods + separate tip charge (grocery/Fresh delivery).** A delivery tip is
+*sometimes* bundled into the one order charge (then the single-charge split above
+already spreads it across items like tax) and *sometimes* billed as its own
+charge named "Amazon Tips". When separate, no single charge equals the order
+total, so `plan_split` returns no-match and `plan_grocery_tip_split(order)` takes
+over: it pairs the order with a **goods charge** (`total − tip`, grocery drift
+allowed) **and** a separate **"Amazon Tips" charge whose amount equals
+`order.tip` to the cent**, both inside the charge window. Each charge becomes its
+own Split parent (children sum to its own amount), and the tip is distributed
+across the **same item categories** as the goods (proportionally) so it lands
+like tax, not as a standalone line. Both parents are stamped with the `order_no`
+so neither is re-matched. The exact tip-amount + "Amazon Tips" name identity is
+what keeps the extra date-residual pairing safe. The console `orders` command
+falls back to this path automatically; a bundled tip does not trigger it.
+
 ## Current status (as of this writing)
 
 - **109 orders** processed (105 Amazon, 3 Walmart, 1 Target), dates 2026-06-19 →
   2026-09-18.
-- **105 applied** as splits (all child sums reconcile, 0 mismatches): 101 direct
+- **108 applied** as splits (all child sums reconcile, 0 mismatches): 101 direct
   card-charge matches + 2 Whole Foods grocery matches + 2 synthetic
-  points-purchases ($0 card, 100%-points).
-- **4 remain un-itemized** — 1 partial-points/multi-shipment edge case (Vtopmart,
-  its cash is already captured as fragment rows) and 3 pure data gaps awaiting a
-  `sync`. See the gap inventory below.
+  points-purchases ($0 card, 100%-points) + 1 small marketplace order + 1 grocery
+  order billed as goods + a separate tip (two Split parents).
+- **Remaining un-itemized** — 1 partial-points/multi-shipment edge case (Vtopmart,
+  its cash is already captured as fragment rows) and a couple of pure data gaps
+  awaiting a `sync`. See the gap inventory below.
 
 ## Atomicity inventory — the originally-blocked purchases
 
@@ -83,7 +99,7 @@ Of the 8 orders that couldn't be matched by the first pass, 4 are now resolved
 | Whole Foods (08-19) | $16.67 → charged $16.84 | Charge named "Whole Foods" not Amazon; grocery drift | **✅ Resolved — grocery alias + drift, scaled to charge** |
 | Whole Foods (08-21) | $37.75 → charged $36.10 | Same | **✅ Resolved — grocery alias + drift, scaled to charge** |
 | Vtopmart drawers (08-01) | $75.57 cash / $138.83 consumed | Partly points ($63.26) + multi-shipment; grand total ≠ any single charge — cash already captured as fragment rows ($33.18 + $42.39) | **Left un-itemized (edge case)** |
-| Whole Foods ice cream (08-28) | $34.87 | Charge not yet in synced data | **Data gap (sync)** |
+| Whole Foods ice cream (08-28) | $34.87 = goods $29.87 + tip $5.00 | Billed as two charges (goods + a separate "Amazon Tips" tip); no single $34.87 charge | **✅ Resolved — goods+tip split, tip spread across item categories** |
 | Goo Gone Walmart (09-17) | $13.48 | PayPal-funded; charge not posted to USAA yet | **Data gap (sync/PayPal)** |
 | Pampers (09-18) | $31.79 | Ordered 09-18, charge not posted yet | **Data gap (sync)** |
 
@@ -127,7 +143,15 @@ Of the 8 orders that couldn't be matched by the first pass, 4 are now resolved
      captured as the fragment rows ($33.18 + $42.39). Creating a synthetic row
      would double-count, so this order is left un-itemized by design.
 
-3. **Data gaps (unposted / un-synced)** — the charge simply isn't in the store
+3. **Goods + separate tip charge** — ✅ *implemented.* A grocery/Fresh delivery
+   tip is sometimes billed as its own "Amazon Tips" charge, so the order settles
+   as *two* charges (goods + tip) and matches no single charge.
+   `plan_grocery_tip_split` / `apply_grocery_tip_split` pair both charges (goods ≈
+   `total − tip` with grocery drift; tip charge amount == `order.tip` exactly),
+   split each as its own parent, and spread the tip across the same item
+   categories as the goods (like tax). See the matching-rules section above.
+
+4. **Data gaps (unposted / un-synced)** — the charge simply isn't in the store
    yet (recent order, PayPal settlement lag, or the account hasn't been synced
    since). Fix: a fresh `sync` (and, for PayPal, the monthly statement — PayPal
    only publishes a month's statement after month-end, ~Oct 1 for September).

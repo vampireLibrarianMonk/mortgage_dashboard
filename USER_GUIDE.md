@@ -109,7 +109,8 @@ merchant means, and the app remembers your rules and re-applies them on every sy
 
 A typical working rhythm: **`sync`** to pull transactions → **`merchants`** to see
 what's uncategorized → **`cat`/`set`** to categorize → **`summary`** to push the
-totals to the dashboard.
+totals to the dashboard → **`budget`** to see how each month tracked against your
+budget.
 
 ---
 
@@ -339,6 +340,37 @@ per-category totals (also refreshed Budget vs Actual):
     Vehicle        $153.77
     ChildCare      $1,255.00
     (unbudgeted)   $2,954.35
+```
+
+---
+
+#### `budget` — budget vs actual, month by month
+
+```
+budget [<YYYY-MM> | year [YYYY]]
+```
+
+Compares your actual spending against the loaded profile's monthly budget and
+prints it as an ASCII table. The budget targets come from the currently saved
+profile, so the comparison reflects whatever profile is active.
+
+- **`budget`** — one row per month: total actual vs the monthly budget target,
+  the variance, and a usage bar (over/under).
+- **`budget <YYYY-MM>`** — a per-category breakdown for that one month.
+- **`budget year [YYYY]`** — per-category year-to-date totals (the monthly
+  target × the number of months of data).
+
+It also notes how many transactions are still `Uncategorized`, so an
+"under budget" month isn't mistaken for complete data.
+
+```
+$ budget
+Budget vs Actual - monthly  (100 Example Ave)
+monthly budget target: $14,962.36
+  month          actual        budget       variance  usage
+  2026-07    $10,701.73    $14,962.36    $-4,260.63 under  [##########    ]
+  2026-08    $11,062.35    $14,962.36    $-3,900.01 under  [##########    ]
+  2026-09    $17,584.80    $14,962.36  +   $2,622.44  over  [##############]!
 ```
 
 ---

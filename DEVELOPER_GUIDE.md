@@ -6,7 +6,8 @@ If you just want to *use* the app, see the [User Guide](USER_GUIDE.md) instead.
 > **Subsystem guides:**
 > - Order-details itemization (transaction splitting) + atomicity gaps:
 >   [DEVELOPER_GUIDE_ORDERS.md](DEVELOPER_GUIDE_ORDERS.md).
-> - Email receipt-ingest effort (Gmail/Proton), paused:
+> - Email receipt-ingest subsystem (Gmail incl. multi-account `gmail`/`gmail2`,
+>   Proton), read-only CLI harness:
 >   [DEVELOPER_GUIDE_MAILBOX.md](DEVELOPER_GUIDE_MAILBOX.md).
 
 ---
@@ -34,7 +35,7 @@ mortgage_dashboard/
 │   ├── models.py               # Pydantic request/response schemas
 │   ├── calculations.py         # Mortgage math engine (amortization, totals, payoff)
 │   ├── profiles_store.py       # Save/load scenarios as JSON, keyed by address
-│   ├── txn_store.py            # Encrypted transaction + merchant-rule store; the categorization engine
+│   ├── txn_store.py            # Encrypted transaction + merchant-rule store; categorization engine (rule re-resolution never overwrites a Split parent)
 │   ├── console_routes.py       # POST /console command processor (the console page's backend)
 │   ├── actuals.py              # Budget-vs-actual aggregation (writes plaid_actuals.json)
 │   ├── plaid_routes.py         # Plaid REST endpoints (connect/exchange/sync/balances/actuals)
