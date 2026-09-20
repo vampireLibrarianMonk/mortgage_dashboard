@@ -282,6 +282,6 @@ def process_order_file(raw_path, processed_root, keep_raw: bool = True) -> Proce
 
 
 # Register built-in vendor readers (imported last to avoid circular imports).
-from . import orders_walmart as _walmart  # noqa: E402,F401
 from . import orders_amazon as _amazon  # noqa: E402,F401
 from . import orders_target as _target  # noqa: E402,F401
+from . import orders_walmart as _walmart  # noqa: E402,F401

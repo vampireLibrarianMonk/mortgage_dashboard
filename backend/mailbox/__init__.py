@@ -34,8 +34,8 @@ Nothing here is imported by the running app yet - this package stands alone.
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass, field
-from typing import Iterable
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 # --------------------------------------------------------------------------- #
 # Shared config
@@ -135,7 +135,7 @@ def sender_for(from_header: str) -> ReceiptSender | None:
     return None
 
 
-def is_order_confirmation(receipt: "ReceiptEmail") -> bool:
+def is_order_confirmation(receipt: ReceiptEmail) -> bool:
     """True if a fetched receipt is an itemized order confirmation (vs tracking/
     login noise), based on its vendor's subject hints."""
     for s in RECEIPT_SENDERS:
@@ -254,7 +254,7 @@ def get_provider(name: str) -> MailboxProvider:
     try:
         cls = _PROVIDERS[name]
     except KeyError:
-        raise KeyError(f"no mailbox provider '{name}'. registered: {registered_providers()}")
+        raise KeyError(f"no mailbox provider '{name}'. registered: {registered_providers()}") from None
     return cls()
 
 

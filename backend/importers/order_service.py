@@ -20,14 +20,13 @@ Preview and commit are separate so callers (console/GUI) can show the plan first
 from __future__ import annotations
 
 import datetime as dt
+import re
 from dataclasses import dataclass, field
 
 import txn_store as ts
 
 from . import DATA_START
 from .orders import OrderDetail, order_slug
-
-import re
 
 # How far AFTER the order date a matching bank charge may post - and it is
 # vendor-specific, because it depends on the payment rail:

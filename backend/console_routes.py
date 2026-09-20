@@ -441,8 +441,8 @@ def _cmd_orders(args) -> list[str]:
     categories come from your merchant rules (matched on item name), so this
     learns as you categorize.
     """
-    from importers import orders as orders_mod
     from importers import order_service
+    from importers import orders as orders_mod
 
     repo = Path(__file__).resolve().parent.parent
     dump_dir = repo / "dump"
@@ -513,7 +513,7 @@ def _cmd_orders(args) -> list[str]:
                 ready_plans.append(plan)
             else:
                 confirm_plans.append(plan)
-                lines.append(f"     (matched by amount+date only - `orders go confirm` to apply)")
+                lines.append("     (matched by amount+date only - `orders go confirm` to apply)")
         elif plan.status == "ambiguous":
             lines.append(f"  ! {len(plan.candidates)} transactions match ${order.total:.2f} - "
                          "resolve manually:")
@@ -969,8 +969,8 @@ def _order_plan_to_dict(plan) -> dict:
 @router.post("/orders/preview")
 async def orders_preview(file: UploadFile = File(...)):
     """Parse an uploaded order-details PDF and return the proposed split (no write)."""
-    from importers import orders as orders_mod
     from importers import order_service
+    from importers import orders as orders_mod
 
     try:
         name, data = await _read_upload(file)
@@ -986,8 +986,8 @@ async def orders_preview(file: UploadFile = File(...)):
 @router.post("/orders/commit")
 async def orders_commit(file: UploadFile = File(...)):
     """File an uploaded order PDF into processed_document/ and apply its split."""
-    from importers import orders as orders_mod
     from importers import order_service
+    from importers import orders as orders_mod
 
     try:
         name, data = await _read_upload(file)

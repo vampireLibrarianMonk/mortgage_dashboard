@@ -7,13 +7,10 @@ offsetting credit-card deposits, page-footer bleed). Service-level tests run
 against the isolated tmp store from conftest, so the real data is never touched.
 """
 
-import datetime as dt
 
 import pytest
 
-from importers import DATA_START, ImportedTxn, parse_files, reader_for
-from importers import paypal, service
-
+from importers import parse_files, paypal, service
 
 # A synthetic statement in PayPal's extracted-text layout. Covers:
 # - a plain purchase (Apple, pre-start)
@@ -176,7 +173,8 @@ def test_commit_is_undoable(patch_pdf, isolated_store):
 
 
 def test_collect_files_unzips():
-    import io, zipfile
+    import io
+    import zipfile
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         zf.writestr("statement-Jul-2026.pdf", b"%PDF-fake")

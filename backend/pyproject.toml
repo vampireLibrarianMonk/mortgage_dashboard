@@ -7,6 +7,18 @@
 extend-exclude = ["venv", ".venv", "__pycache__", ".pytest_cache"]
 line-length = 110
 target-version = "py310"
+# Backend modules are imported by bare name (e.g. `import txn_store`), with
+# backend/ on sys.path. Declaring it as the source root makes import sorting
+# classify them as first-party consistently whether ruff runs from backend/ (dev)
+# or the repo root (pre-commit) - otherwise isort re-sorts and flags I001.
+src = ["backend"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "calculations", "models", "profiles_store", "txn_store", "actuals",
+    "console_routes", "plaid_routes", "plaid_client", "credential_store",
+    "main", "importers", "mailbox",
+]
 
 [tool.ruff.lint]
 # A pragmatic, security-aware rule set:
@@ -20,12 +32,38 @@ select = ["E", "F", "B", "S", "I", "UP"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
+# Globs are "**/"-prefixed so they match whether ruff runs from backend/ (dev) or
+# from the repo root (pre-commit passes root-relative paths like backend/tests/...).
 # Tests may use assert (S101) and hard-coded test values.
-"tests/*" = ["S101"]
+"**/tests/*" = ["S101"]
+# FastAPI route signatures use `= File(...)` in defaults by design (B008 is a
+# known false positive for FastAPI's dependency-injection markers).
+"**/console_routes.py" = ["B008"]
+# The content-sniffing reader dispatch intentionally swallows a misbehaving
+# reader's exception and tries the next one (S112) - a logged failure here would
+# be noise and must not break dispatch.
+"**/importers/__init__.py" = ["S112"]
+"**/importers/orders.py" = ["S112"]
+# The order-service module does a deliberate late import to avoid a circular
+# import with the importers package (E402).
+"**/importers/order_service.py" = ["E402"]
+# Compact per-field parse table; the semicolons keep related assignments aligned.
+"**/importers/orders_walmart.py" = ["E702"]
+# Provider modules are imported at the bottom of the package __init__ on purpose,
+# to avoid a circular import (they import from this package) - E402 by design.
+"**/mailbox/cli.py" = ["E402"]
+# Best-effort IMAP teardown must never raise (S110); there is nothing actionable
+# to log when closing an already-broken connection.
+"**/mailbox/_imapbase.py" = ["S110"]
 
 [tool.bandit]
 # Bandit scans for security issues; exclude the vendored venv and tests.
 exclude_dirs = ["venv", ".venv", "tests", "__pycache__", ".pytest_cache"]
+# B110/B112 (try/except/pass|continue): the reader-dispatch sniff loop and the
+# best-effort IMAP teardown intentionally swallow exceptions - a failing reader
+# must not break dispatch, and closing an already-broken connection has nothing
+# actionable to log. These match the ruff S110/S112 per-file-ignores above.
+skips = ["B110", "B112"]
 
 [tool.pytest.ini_options]
 # Tests import backend modules by bare name (e.g. `import calculations`), so run

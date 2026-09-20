@@ -27,8 +27,8 @@ importer of origin (e.g. ``"paypal_statement"``).
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Callable, Iterable
 
 # --------------------------------------------------------------------------- #
 # Shared constants

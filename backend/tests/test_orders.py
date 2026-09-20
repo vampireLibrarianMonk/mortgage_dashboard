@@ -10,9 +10,7 @@ import datetime as dt
 import pytest
 
 import txn_store as ts
-from importers import orders, order_service
-from importers import orders_walmart, orders_amazon  # noqa: F401 (register readers)
-
+from importers import order_service, orders, orders_amazon, orders_walmart  # noqa: F401 (register readers)
 
 # --------------------------------------------------------------------------- #
 # Synthetic invoice text (mirrors real extracted PDF text)

@@ -15,13 +15,12 @@ from __future__ import annotations
 import datetime as dt
 import email
 import imaplib
+from collections.abc import Iterable
 from email.header import decode_header, make_header
 from email.message import Message
 from email.utils import parsedate_to_datetime
-from typing import Iterable
 
-from . import MailboxProvider, ReceiptEmail, SearchCriteria, RECEIPT_SENDERS, sender_for
-
+from . import RECEIPT_SENDERS, MailboxProvider, ReceiptEmail, SearchCriteria, sender_for
 
 # --------------------------------------------------------------------------- #
 # Query construction

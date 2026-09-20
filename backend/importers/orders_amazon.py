@@ -136,6 +136,7 @@ def _latest_delivery(text: str, order_date):
     the order date, rolling to the next year if the delivery month is earlier
     (order in Dec, delivered in Jan)."""
     import datetime as dt
+
     from .orders import parse_month_day_year
     best = None
     for m in _DELIVERED_RE.finditer(text):

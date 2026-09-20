@@ -42,8 +42,10 @@ from . import (
     RECEIPT_SENDERS,
     SearchCriteria,
     get_provider,
-    is_order_confirmation as _is_order_confirmation,
     registered_providers,
+)
+from . import (
+    is_order_confirmation as _is_order_confirmation,
 )
 
 _SAMPLES_DIR = Path(__file__).resolve().parent / "_samples"

@@ -24,7 +24,10 @@ repos:
       - id: trailing-whitespace
       - id: check-yaml
       - id: check-json
-        exclude: '^\.secrets\.baseline$'
+        # tsconfig.*.json are JSONC (TypeScript allows comments + trailing
+        # commas), which the strict JSON parser rejects. .secrets.baseline is
+        # managed by detect-secrets, not hand-edited.
+        exclude: '^(\.secrets\.baseline|frontend/tsconfig\..*\.json)$'
       - id: detect-private-key
 
   # Secret scanning against the committed baseline (baseline currently has zero

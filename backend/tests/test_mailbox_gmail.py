@@ -8,7 +8,7 @@ so nothing touches the real Windows Credential Manager.
 import pytest
 
 import credential_store as cred
-from mailbox import gmail, get_provider, registered_providers
+from mailbox import get_provider, gmail, registered_providers
 
 
 @pytest.fixture(autouse=True)
