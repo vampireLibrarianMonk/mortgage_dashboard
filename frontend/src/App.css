@@ -528,6 +528,22 @@ h4 {
 }
 
 /* Budget vs Actual */
+.bva-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.bva-period {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.bva-period select {
+  margin-left: 0.35rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.82rem;
+}
 .bva-grid {
   display: block;
   font-size: 0.82rem;

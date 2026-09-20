@@ -183,3 +183,76 @@ def test_summary_aggregates_budget_and_unbudgeted(make_txn):
     assert "Household" in joined
     # Transfer shows as unbudgeted outflow.
     assert "unbudgeted" in joined.lower()
+
+
+# --- budget (month-by-month vs profile targets) --------------------------------
+
+def _fixed_targets(monkeypatch):
+    """Pin budget targets so the command doesn't need a saved profile."""
+    targets = {"Mortgage": 2000.0, "Household": 500.0, "Utilities": 100.0,
+               "Vehicle": 300.0, "ChildCare": 400.0, "PetCare": 50.0,
+               "Discretionary": 250.0}
+    monkeypatch.setattr(cr, "_budget_targets", lambda: (targets, "123 Test St"))
+    return targets
+
+
+def test_budget_no_profile_message(make_txn, monkeypatch):
+    import txn_store as ts
+    ts.save_transactions([make_txn("t1", "x", 10.0, category="Household")])
+    monkeypatch.setattr(cr, "_budget_targets", lambda: (None, None))
+    out = run("budget")
+    assert any("no saved profile" in ln.lower() for ln in out)
+
+
+def test_budget_monthly_table(make_txn, monkeypatch):
+    import txn_store as ts
+    _fixed_targets(monkeypatch)
+    ts.save_transactions([
+        make_txn("t1", "Mortgage", 2000.0, category="Mortgage", year=2026, month=7),
+        make_txn("t2", "Grocery", 800.0, category="Household", year=2026, month=7),
+        make_txn("t3", "Grocery", 300.0, category="Household", year=2026, month=8),
+    ])
+    out = run("budget")
+    text = "\n".join(out)
+    assert "Budget vs Actual - monthly" in out[0]
+    assert "2026-07" in text and "2026-08" in text
+    # July actual = 2000 + 800 = 2800; over the 3600 monthly target -> under
+    assert "under" in text
+
+
+def test_budget_single_month_category_breakdown(make_txn, monkeypatch):
+    import txn_store as ts
+    _fixed_targets(monkeypatch)
+    ts.save_transactions([
+        make_txn("t1", "Grocery", 800.0, category="Household", year=2026, month=7),
+    ])
+    out = run("budget 2026-07")
+    text = "\n".join(out)
+    assert "2026-07" in out[0]
+    assert "Household" in text
+    # Household actual 800 vs budget 500 -> +300 over
+    assert "+" in text and "TOTAL" in text
+
+
+def test_budget_split_children_counted(make_txn, monkeypatch):
+    import txn_store as ts
+    _fixed_targets(monkeypatch)
+    # A Split parent contributes via its children, not its own amount.
+    ts.save_transactions([
+        make_txn("t1", "Amazon", 0.0, category="Split", year=2026, month=7,
+                 split_children=[{"amount": 120.0, "category": "Household", "note": "x"},
+                                 {"amount": -120.0, "category": "Rewards", "note": "pts"}]),
+    ])
+    out = run("budget 2026-07")
+    text = "\n".join(out)
+    # Household child (120) counts; Rewards child excluded (not a budget category).
+    assert "Household" in text
+    assert "$120.00" in text
+
+
+def test_budget_unknown_month(make_txn, monkeypatch):
+    import txn_store as ts
+    _fixed_targets(monkeypatch)
+    ts.save_transactions([make_txn("t1", "x", 10.0, category="Household", year=2026, month=7)])
+    out = run("budget 2026-99")
+    assert any("no actuals for 2026-99" in ln for ln in out)

@@ -73,6 +73,7 @@ def _cmd_help(_args) -> list[str]:
         "  rule ls | rule rm <pattern>       manage merchant rules",
         "  label <match text> = <label> [$amt]  attach a note to matching txns",
         "  summary [year]                    per-category totals; refresh Budget vs Actual",
+        "  budget [<YYYY-MM>|year [YYYY]]     budget vs actual, month by month (ascii)",
         "  import [go]                       preview (or `go` to load) statement files in dump/",
         "  orders [go]                       preview (or `go` to apply) order-PDF splits in dump/",
         "  undo                              revert the last change",
@@ -640,11 +641,168 @@ def _cmd_plaid(args) -> list[str]:
     return ["usage: plaid [status | items | balances [slug] | link]"]
 
 
+# --- budget vs actual (month-by-month ascii report) ---------------------------
+
+def _budget_targets() -> tuple[dict[str, float], str] | tuple[None, None]:
+    """Monthly budget target per BUDGET_CATEGORY, from the active profile.
+
+    Mirrors the frontend's profile->category mapping (BudgetVsActual.tsx) so the
+    console and the web view agree. Returns (targets, address) or (None, None) if
+    no profile is saved.
+    """
+    import profiles_store as ps
+    from calculations import calculate
+    from models import CalculateRequest
+
+    profs = ps.list_profiles()
+    if not profs:
+        return None, None
+    prof = ps.load_profile(profs[0]["id"])  # most-recently-updated
+    if not prof:
+        return None, None
+    resp = calculate(CalculateRequest(**prof["data"]))
+    targets = {
+        "Mortgage": resp.planned_mortgage_outflow_monthly,
+        "Household": resp.household_monthly,
+        "Utilities": resp.utilities_monthly,
+        "Vehicle": resp.vehicle_monthly,
+        "ChildCare": resp.child_care_monthly,
+        "PetCare": resp.pet_care_monthly,
+        "Discretionary": resp.discretionary_total_monthly,
+    }
+    return targets, prof["address"]
+
+
+def _bar(actual: float, budget: float, width: int = 14) -> str:
+    """A tiny ascii usage bar showing actual as a fraction of budget. Over-budget
+    fills completely and is flagged with '!'."""
+    if budget <= 0:
+        return " " * width
+    frac = actual / budget
+    filled = min(width, int(round(frac * width)))
+    over = frac > 1.0
+    return "[" + ("#" * filled).ljust(width) + "]" + ("!" if over else "")
+
+
+def _month_actuals() -> dict[str, dict]:
+    """month-key -> {'categories': {...7...}, 'unbudgeted_outflow': x} from the
+    live transaction store (recomputed here so it's always current, not stale)."""
+    txns = ts.load_transactions()
+    by_month = defaultdict(lambda: defaultdict(float))
+    unbud = defaultdict(float)
+    for t in txns:
+        mk = f"{int(t['year']):04d}-{int(t['month']):02d}"
+        for c, amt in _split_lines(t):
+            if c in BUDGET_CATEGORIES:
+                by_month[mk][c] += amt
+            elif c in UNBUDGETED:
+                unbud[mk] += amt
+    return {mk: {"categories": {c: round(by_month[mk].get(c, 0.0), 2) for c in BUDGET_CATEGORIES},
+                 "unbudgeted_outflow": round(unbud.get(mk, 0.0), 2)}
+            for mk in sorted(set(by_month) | set(unbud))}
+
+
+def _split_lines(t: dict):
+    """(category, amount) lines a txn contributes - distributing split children.
+    Mirrors actuals._category_amounts so the report matches the exported json."""
+    if t.get("category") == "Split" and t.get("split_children"):
+        for ch in t["split_children"]:
+            yield ch.get("category"), float(ch.get("amount", 0.0))
+    else:
+        yield t.get("category"), float(t.get("amount", 0.0))
+
+
+def _cmd_budget(args) -> list[str]:
+    """Budget vs Actual, month by month, as ascii tables.
+
+    Usage:
+      budget                     one row per month: total actual vs monthly budget
+      budget <YYYY-MM>           per-category breakdown for that month
+      budget year [YYYY]         per-category YTD totals vs (months x monthly budget)
+    """
+    targets, address = _budget_targets()
+    if targets is None:
+        return ["no saved profile - the budget targets come from a saved profile.",
+                "save one in the dashboard first, then re-run `budget`."]
+    monthly_total = sum(targets.values())
+    months = _month_actuals()
+    if not months:
+        return ["no categorized spending yet. run `sync` then categorize, or `summary`."]
+
+    txns = ts.load_transactions()
+    uncat = sum(1 for t in txns if t["category"] == "Uncategorized")
+
+    # budget year [YYYY] -> per-category YTD table
+    if args and args[0].lower() in ("year", "ytd"):
+        yr = args[1] if len(args) > 1 else max(mk[:4] for mk in months)
+        ym = {mk: v for mk, v in months.items() if mk.startswith(yr)}
+        if not ym:
+            return [f"no actuals for {yr}."]
+        n = len(ym)
+        agg = {c: round(sum(v["categories"][c] for v in ym.values()), 2) for c in BUDGET_CATEGORIES}
+        return _category_table(f"YTD {yr}  ({n} month{'s' if n != 1 else ''} of data)  {address}",
+                               agg, {c: targets[c] * n for c in BUDGET_CATEGORIES}, uncat)
+
+    # budget <YYYY-MM> -> per-category table for one month
+    if args and len(args[0]) == 7 and args[0][4] == "-":
+        mk = args[0]
+        if mk not in months:
+            return [f"no actuals for {mk}. available: {', '.join(months)}"]
+        return _category_table(f"{mk}  {address}", months[mk]["categories"], targets, uncat,
+                               unbudgeted=months[mk]["unbudgeted_outflow"])
+
+    # default: month-by-month totals
+    lines = [f"Budget vs Actual - monthly  ({address})",
+             f"monthly budget target: {_fmt(monthly_total)}", ""]
+    hdr = f"  {'month':7}  {'actual':>12}  {'budget':>12}  {'variance':>13}  usage"
+    lines.append(hdr)
+    lines.append("  " + "-" * (len(hdr) - 2))
+    for mk, v in months.items():
+        act = round(sum(v["categories"].values()), 2)
+        var = act - monthly_total
+        flag = "over" if var > 0 else "under"
+        lines.append(f"  {mk:7}  {_fmt(act):>12}  {_fmt(monthly_total):>12}  "
+                     f"{('+' if var > 0 else '')}{_fmt(var):>12} {flag:>5}  {_bar(act, monthly_total)}")
+    lines.append("")
+    lines.append(f"  tip: `budget {next(iter(months))}` for a category breakdown; "
+                 "`budget year` for YTD.")
+    if uncat:
+        lines.append(f"  note: {uncat} transaction(s) still Uncategorized - not counted "
+                     "in any category above.")
+    return lines
+
+
+def _category_table(title: str, actual: dict, budget: dict, uncat: int,
+                    unbudgeted: float = 0.0) -> list[str]:
+    """Per-category actual-vs-budget ascii table for one period."""
+    lines = [title, ""]
+    hdr = f"  {'category':13}  {'actual':>12}  {'budget':>12}  {'variance':>13}  usage"
+    lines.append(hdr)
+    lines.append("  " + "-" * (len(hdr) - 2))
+    ta = tb = 0.0
+    for c in BUDGET_CATEGORIES:
+        a, b = actual.get(c, 0.0), budget.get(c, 0.0)
+        ta += a
+        tb += b
+        var = a - b
+        lines.append(f"  {c:13}  {_fmt(a):>12}  {_fmt(b):>12}  "
+                     f"{('+' if var > 0 else '')}{_fmt(var):>12}  {_bar(a, b)}")
+    lines.append("  " + "-" * (len(hdr) - 2))
+    tvar = ta - tb
+    lines.append(f"  {'TOTAL':13}  {_fmt(ta):>12}  {_fmt(tb):>12}  "
+                 f"{('+' if tvar > 0 else '')}{_fmt(tvar):>12}  {_bar(ta, tb)}")
+    if unbudgeted:
+        lines.append(f"  (plus {_fmt(unbudgeted)} unbudgeted outflow - transfers, no budget line)")
+    if uncat:
+        lines.append(f"  note: {uncat} transaction(s) still Uncategorized - not counted above.")
+    return lines
+
+
 DISPATCH = {
     "help": _cmd_help, "status": _cmd_status, "sync": _cmd_sync, "list": _cmd_list,
     "merchants": _cmd_merchants, "cat": _cmd_cat, "set": _cmd_set, "rule": _cmd_rule,
     "label": _cmd_label,
-    "summary": _cmd_summary, "undo": _cmd_undo, "plaid": _cmd_plaid,
+    "summary": _cmd_summary, "budget": _cmd_budget, "undo": _cmd_undo, "plaid": _cmd_plaid,
     "import": _cmd_import, "orders": _cmd_orders,
 }
 
