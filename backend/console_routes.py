@@ -235,8 +235,13 @@ def _cmd_cat(args) -> list[str]:
 
     ts.snapshot()
     n = ts.add_rule(pattern, category, account_mask=mask)
+    # Also push the rule into itemized split children (matched on item name), so a
+    # `cat` on an item name categorizes Amazon/order line items, not just top-level
+    # rows. Only Uncategorized children are touched - hand-set ones are preserved.
+    m = ts.recategorize_split_children(only_uncategorized=True)
     scope = f" on account {mask}" if mask else ""
-    return [f"rule '{pattern.lower()}'{scope} -> {category}; categorized {n} transaction(s)."]
+    extra = f"; {m} split item(s)" if m else ""
+    return [f"rule '{pattern.lower()}'{scope} -> {category}; categorized {n} transaction(s){extra}."]
 
 
 def _cmd_set(args) -> list[str]:

@@ -478,3 +478,37 @@ def unsplit_transaction(transaction_id: str, category: str = "Uncategorized") ->
     parent["category"] = category if category in CATEGORIES else "Uncategorized"
     save_transactions(txns)
     return True
+
+
+def recategorize_split_children(only_uncategorized: bool = True) -> int:
+    """Re-resolve split-child categories against the current merchant rules.
+
+    Split children are categorized from their item name at split time (see
+    order_service._allocate_children). When the user later adds item-name rules
+    (via `cat`), previously-split children do not benefit - this applies the
+    current rules to them retroactively.
+
+    Matches each child's note (the item name) with the same rule engine used for
+    top-level transactions. By default only children currently "Uncategorized" are
+    touched (so a hand-set child category is never overwritten); pass
+    only_uncategorized=False to re-resolve every child. A child's amount is never
+    changed, so splits keep reconciling. Returns the count of children updated.
+    Caller is responsible for snapshot() (undo support).
+    """
+    txns = load_transactions()
+    rules = load_rules()
+    n = 0
+    for t in txns:
+        if t.get("category") != SPLIT_CATEGORY or not t.get("split_children"):
+            continue
+        for c in t["split_children"]:
+            if only_uncategorized and c.get("category") != "Uncategorized":
+                continue
+            pseudo = {"name": c.get("note", ""), "merchant": ""}
+            matched = _match_rule(pseudo, rules)
+            if matched and matched != c.get("category"):
+                c["category"] = matched
+                n += 1
+    if n:
+        save_transactions(txns)
+    return n

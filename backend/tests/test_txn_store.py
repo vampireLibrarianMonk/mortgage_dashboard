@@ -437,3 +437,60 @@ def test_regression_kate_farms_pending_posted_no_phantom_duplicate(make_txn):
     assert len(amazon_3613) == 1                       # no phantom duplicate
     assert amazon_3613[0]["transaction_id"] == "Q"     # the posted one
     assert "*" in amazon_3613[0]["name"]               # carries the reference code
+
+
+# --- recategorize_split_children (item-name rules applied retroactively) ------
+
+def test_recategorize_split_children_applies_item_rules(make_txn):
+    # A split whose children inherited Uncategorized (no rule at split time).
+    parent = make_txn("t1", "Amazon", 50.0)
+    parent["category"] = "Split"
+    parent["split_children"] = [
+        {"amount": 30.0, "category": "Uncategorized", "note": "Potty Training Seat for Toddlers"},
+        {"amount": 20.0, "category": "Uncategorized", "note": "Finish Dishwasher Pods"},
+    ]
+    ts.save_transactions([parent])
+    ts.add_rule("potty training", "ChildCare")
+    ts.add_rule("dishwasher pods", "Household")
+
+    n = ts.recategorize_split_children(only_uncategorized=True)
+    assert n == 2
+    kids = ts.load_transactions()[0]["split_children"]
+    cats = {c["note"][:12]: c["category"] for c in kids}
+    assert cats["Potty Traini"] == "ChildCare"
+    assert cats["Finish Dishw"] == "Household"
+
+
+def test_recategorize_preserves_hand_set_child_by_default(make_txn):
+    parent = make_txn("t1", "Amazon", 20.0)
+    parent["category"] = "Split"
+    parent["split_children"] = [
+        {"amount": 20.0, "category": "Discretionary", "note": "Potty Training Seat"},
+    ]
+    ts.save_transactions([parent])
+    ts.add_rule("potty training", "ChildCare")
+    # only_uncategorized=True must NOT overwrite the hand-set Discretionary child.
+    n = ts.recategorize_split_children(only_uncategorized=True)
+    assert n == 0
+    assert ts.load_transactions()[0]["split_children"][0]["category"] == "Discretionary"
+
+
+def test_recategorize_longest_rule_wins_for_child(make_txn):
+    parent = make_txn("t1", "Amazon", 20.0)
+    parent["category"] = "Split"
+    parent["split_children"] = [
+        {"amount": 20.0, "category": "Uncategorized",
+         "note": "Dog and Puppy Potty Training Pee Pads"},
+    ]
+    ts.save_transactions([parent])
+    ts.add_rule("potty training", "ChildCare")
+    ts.add_rule("dog and puppy potty", "PetCare")  # longer -> more specific
+    ts.recategorize_split_children()
+    assert ts.load_transactions()[0]["split_children"][0]["category"] == "PetCare"
+
+
+def test_recategorize_ignores_non_split_rows(make_txn):
+    ts.save_transactions([make_txn("t1", "Costco", 10.0)])
+    ts.add_rule("costco", "Household")
+    # No split children to touch; returns 0 and does not error.
+    assert ts.recategorize_split_children() == 0
