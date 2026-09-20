@@ -240,3 +240,35 @@ def test_undo_reverts_last_mutation(make_txn):
 
 def test_undo_with_empty_stack_returns_false():
     assert ts.undo() is False
+
+
+# --- split parents must survive rule re-resolution ----------------------------
+
+def test_add_rule_does_not_clobber_split_parent(make_txn):
+    # A Split parent (itemized order) must never be recategorized by a merchant
+    # rule - doing so drops the split and double-counts in actuals.
+    parent = make_txn("t1", "Walmart", 50.0)
+    parent["category"] = "Split"
+    parent["split_children"] = [{"amount": 50.0, "category": "Household", "note": "x"}]
+    other = make_txn("t2", "Walmart Grocery", 20.0)  # a normal Walmart txn
+    ts.save_transactions([parent, other])
+
+    ts.add_rule("walmart", "Household")
+
+    rows = {t["transaction_id"]: t for t in ts.load_transactions()}
+    assert rows["t1"]["category"] == "Split"          # parent untouched
+    assert rows["t1"]["split_children"]               # children intact
+    assert rows["t2"]["category"] == "Household"       # normal txn categorized
+
+
+def test_remove_rule_does_not_clobber_split_parent(make_txn):
+    parent = make_txn("t1", "Target", 30.0)
+    parent["category"] = "Split"
+    parent["split_children"] = [{"amount": 30.0, "category": "Household", "note": "x"}]
+    ts.save_transactions([parent])
+    ts.add_rule("target", "Household")   # parent already skipped by add_rule
+    ts.remove_rule("target")             # removal must also skip the parent
+
+    row = ts.load_transactions()[0]
+    assert row["category"] == "Split"
+    assert row["split_children"]

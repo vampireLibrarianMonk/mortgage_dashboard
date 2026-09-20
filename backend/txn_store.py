@@ -275,6 +275,12 @@ def add_rule(pattern: str, category: str, account_mask: str | None = None) -> in
     txns = load_transactions()
     n = 0
     for t in txns:
+        # Never let a merchant rule overwrite a Split parent. A split has been
+        # itemized into children that carry the real categories; the parent is a
+        # container tagged "Split". Re-resolving it to a merchant category would
+        # both lose the split and double-count (parent + children) in actuals.
+        if t.get("category") == SPLIT_CATEGORY or t.get("split_children"):
+            continue
         matched = _match_rule(t, rules)
         if matched is not None:
             t["category"] = matched
@@ -306,6 +312,9 @@ def remove_rule(pattern: str) -> bool:
     # Re-resolve any transaction that no longer has a matching rule.
     txns = load_transactions()
     for t in txns:
+        # Split parents are containers - never re-resolve or reset them (see add_rule).
+        if t.get("category") == SPLIT_CATEGORY or t.get("split_children"):
+            continue
         matched = _match_rule(t, new)
         if matched is not None:
             t["category"] = matched
