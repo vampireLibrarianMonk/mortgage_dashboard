@@ -434,6 +434,10 @@ def unsplit_transaction(transaction_id: str, category: str = "Uncategorized") ->
     if parent is None or not parent.get("split_children"):
         return False
     parent.pop("split_children", None)
+    # Also drop the order stamp: once un-itemized, this row no longer represents
+    # that order, so the already-applied guard must not keep skipping it (a stale
+    # stamp would strand the order, unable to re-match to its real charge).
+    parent.pop("split_order_no", None)
     parent["category"] = category if category in CATEGORIES else "Uncategorized"
     save_transactions(txns)
     return True

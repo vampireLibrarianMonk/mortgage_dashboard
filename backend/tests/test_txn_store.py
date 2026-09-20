@@ -272,3 +272,23 @@ def test_remove_rule_does_not_clobber_split_parent(make_txn):
     row = ts.load_transactions()[0]
     assert row["category"] == "Split"
     assert row["split_children"]
+
+
+# --- unsplit clears the order stamp (regression) ------------------------------
+
+def test_unsplit_clears_split_order_no(make_txn):
+    # A split stamped with an order_no, when unsplit, must NOT keep the stamp -
+    # a stale split_order_no would make the already-applied guard skip this row
+    # forever, stranding the order so it can't re-match to its real charge.
+    ts.save_transactions([make_txn("t1", "Amazon", 36.13)])
+    ts.split_transaction("t1", [{"amount": 36.13, "category": "ChildCare", "note": "x"}],
+                         order_no="11119355373525811")
+    row = ts.load_transactions()[0]
+    assert row["category"] == "Split"
+    assert row["split_order_no"] == "11119355373525811"
+
+    ts.unsplit_transaction("t1", "Uncategorized")
+    row = ts.load_transactions()[0]
+    assert row["category"] == "Uncategorized"
+    assert "split_children" not in row
+    assert "split_order_no" not in row  # the stamp is gone
