@@ -45,6 +45,11 @@ CATEGORIES = [
     # (see split_transaction). The parent is a container only: its own amount is
     # excluded from actuals and the children carry the real categories/amounts.
     "Split",
+    # "Rewards" is a funding/income stream: redeemed credit-card reward points.
+    # On a points-funded split it appears as a negative child (points paid for
+    # part of the consumed value); it can also tag a standalone rewards-redemption
+    # deposit (e.g. NFCU/USAA cash-back credited to an account).
+    "Rewards",
     "Income", "Transfer", "Ignore",
     # "Review" parks transactions the user wants to revisit (unclear/worrying
     # items) so they stay visible instead of being filed into a budget bucket.

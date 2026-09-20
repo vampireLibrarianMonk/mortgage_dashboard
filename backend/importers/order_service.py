@@ -24,7 +24,8 @@ from dataclasses import dataclass, field
 
 import txn_store as ts
 
-from .orders import OrderDetail
+from . import DATA_START
+from .orders import OrderDetail, order_slug
 
 import re
 
@@ -272,6 +273,16 @@ def _allocate_children(order: OrderDetail, fallback_category: str = "Uncategoriz
     return children
 
 
+def _rewards_child(order: OrderDetail) -> SplitChildPlan:
+    """A negative "Rewards" child carrying the redeemed points as a funding
+    source. Added when points paid for part of the order so the item children
+    (full consumed value) plus this negative line sum to the actual card charge -
+    the budget then shows full consumption AND a rewards income line."""
+    note = f"redeemed points ({order.vendor} Visa)" if order.vendor == "amazon" \
+        else f"redeemed points ({order.vendor})"
+    return SplitChildPlan(amount=-round(order.rewards_points, 2), category="Rewards", note=note)
+
+
 def _fallback_category(txn: dict) -> str:
     """Category a split child inherits when no item-rule matches: the parent's
     existing category, unless it is a non-informative state."""
@@ -329,17 +340,27 @@ def plan_split(order: OrderDetail) -> OrderSplitPlan:
 
     plan.matched_txn = best
     plan.matched_txn_id = best["transaction_id"]
-    # For a grocery order the charge can drift from the estimate; scale the split
-    # so children sum to the ACTUAL charge (what left the account), not the PDF
-    # estimate.
     charge_amt = round(abs(float(best.get("amount", 0.0))), 2)
-    target = charge_amt if order.grocery else None
-    plan.children = _allocate_children(order, _fallback_category(best), target_total=target)
-    plan.warnings.extend(order.sanity())
-    if order.grocery and abs(charge_amt - round(order.total, 2)) > _AMOUNT_TOLERANCE:
+    if order.rewards_points > 0:
+        # Points paid for part of the order. Item children carry the FULL consumed
+        # value; a negative Rewards child brings the total down to the actual card
+        # charge. Budget then shows full consumption + a rewards income line.
+        plan.children = _allocate_children(order, _fallback_category(best),
+                                           target_total=order.consumed_value)
+        plan.children.append(_rewards_child(order))
         plan.warnings.append(
-            f"grocery amount drift: estimate ${order.total:.2f} -> charged "
-            f"${charge_amt:.2f} (weight/substitution); split scaled to the charge")
+            f"funded by ${charge_amt:.2f} cash + ${order.rewards_points:.2f} reward points "
+            f"(full consumed ${order.consumed_value:.2f})")
+    else:
+        # For a grocery order the charge can drift from the estimate; scale the
+        # split so children sum to the ACTUAL charge, not the PDF estimate.
+        target = charge_amt if order.grocery else None
+        plan.children = _allocate_children(order, _fallback_category(best), target_total=target)
+        if order.grocery and abs(charge_amt - round(order.total, 2)) > _AMOUNT_TOLERANCE:
+            plan.warnings.append(
+                f"grocery amount drift: estimate ${order.total:.2f} -> charged "
+                f"${charge_amt:.2f} (weight/substitution); split scaled to the charge")
+    plan.warnings.extend(order.sanity())
 
     # Confidence: a vendor-named row (e.g. "Walmart") is a strong match. A generic
     # row (opaque "PAYPAL PURCHASE", a bare card line) matched only by amount+date
@@ -387,6 +408,74 @@ def plan_manual_split(order: OrderDetail, transaction_id: str) -> OrderSplitPlan
     plan.warnings.extend(order.sanity())
     plan.status = "ready"
     return plan
+
+
+def is_fully_points_funded(order: OrderDetail) -> bool:
+    """True if reward points covered the entire order (grand total ~ $0), so no
+    card charge exists in any bank feed to split."""
+    return (order.rewards_points > 0 and order.total is not None
+            and round(order.total, 2) <= _AMOUNT_TOLERANCE)
+
+
+def _points_txn_id(order: OrderDetail) -> str:
+    return f"points_{order.vendor}_{order.order_no or order_slug(order)}"
+
+
+def plan_points_purchase(order: OrderDetail) -> OrderSplitPlan:
+    """Build a split plan for a 100%-points order as a SYNTHETIC $0 transaction.
+
+    These orders never hit a card ($0 cash), so there is no bank row to match.
+    We record a $0 transaction (id 'points_<vendor>_<order#>', stable so re-runs
+    dedupe) whose children are the full-value items plus a negative Rewards child
+    equal to the points - summing to $0. The budget then reflects the goods
+    consumed and the reward points that funded them, with no cash outflow.
+    """
+    plan = OrderSplitPlan(order=order)
+    if not is_fully_points_funded(order):
+        plan.status = "no-match"
+        plan.warnings.append("not a fully-points-funded order")
+        return plan
+    if order.order_no and order.order_no in _applied_order_nos():
+        plan.status = "already-applied"
+        plan.warnings.append(f"order {order.order_no} is already itemized")
+        return plan
+    # children: full consumed value in item categories + a negative Rewards child
+    # equal to the points -> sums to $0.
+    plan.children = _allocate_children(order, target_total=order.consumed_value)
+    plan.children.append(_rewards_child(order))
+    plan.matched_txn_id = _points_txn_id(order)
+    plan.matched_txn = None  # synthetic - created at apply time
+    plan.warnings.extend(order.sanity())
+    plan.warnings.append(
+        f"100% reward points (${order.rewards_points:.2f}); recorded as a $0 "
+        f"points-purchase (consumed ${order.consumed_value:.2f})")
+    plan.status = "points-purchase"
+    return plan
+
+
+def apply_points_purchase(plan: OrderSplitPlan) -> dict:
+    """Create the synthetic $0 transaction for a 100%-points order and split it.
+    Snapshots first. Idempotent via the stable synthetic id (upsert dedupes)."""
+    if plan.status != "points-purchase" or not plan.matched_txn_id:
+        raise ValueError(f"cannot apply points-purchase: status={plan.status}")
+    order = plan.order
+    d = order.date or DATA_START
+    synth = {
+        "transaction_id": plan.matched_txn_id,
+        "date": d.isoformat(),
+        "authorized_date": d.isoformat(),
+        "year": d.year, "month": d.month,
+        "name": f"{order.vendor.title()} order (reward points)",
+        "merchant": order.vendor,
+        "amount": 0.0,
+        "bank": "rewards",
+        "account_id": None, "account_mask": None,
+        "source": "points_purchase",
+    }
+    ts.snapshot()
+    ts.upsert_transactions([synth])  # dedupes by id if re-run
+    return ts.split_transaction(plan.matched_txn_id, plan.child_dicts,
+                                order_no=order.order_no)
 
 
 _APPLICABLE = {"ready", "needs-confirm"}

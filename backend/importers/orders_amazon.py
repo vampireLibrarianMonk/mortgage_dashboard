@@ -107,9 +107,12 @@ class AmazonOrderReader(OrderReader):
         free_ship = grab(_FREESHIP_RE) or 0.0
         order.shipping = round(shipping - free_ship, 2)  # net of any free-shipping credit
         order.tax = grab(_TAX_RE) or 0.0
-        # Credits (subtracted): a promo/discount plus any Amazon Visa reward points
-        # applied against the total.
-        order.savings = round((grab(_PROMO_RE) or 0.0) + (grab(_REWARDS_RE) or 0.0), 2)
+        # Real discounts (coupon/promo/Subscribe & Save) REDUCE consumption.
+        order.savings = round(grab(_PROMO_RE) or 0.0, 2)
+        # Reward points are a FUNDING source, not a discount - kept separate so the
+        # full consumed value is preserved (the split records consumption + a
+        # negative rewards-funding child).
+        order.rewards_points = round(grab(_REWARDS_RE) or 0.0, 2)
         # Added charges: a driver tip and/or gift wrap.
         order.tip = round((grab(_TIP_RE) or 0.0) + (grab(_GIFTWRAP_RE) or 0.0), 2)
         order.total = grab(_TOTAL_RE)

@@ -469,3 +469,74 @@ def test_already_applied_order_not_rematched(isolated_store):
     plan2 = order_service.plan_split(od)
     assert plan2.status == "already-applied"
     assert plan2.matched_txn_id is None
+
+
+# --- rewards-points funding model ---
+
+def _amazon_points_order(subtotal, tax, points, grand, items):
+    """Amazon order text with a Rewards Points line. `items` = [(name, price)]."""
+    itemlines = "".join(f"{name}\n${price:.2f}\n" for name, price in items)
+    txt = (
+        "Order Summary\nOrder placed August 1, 2026  Order # 113-1111111-1111111\n"
+        "Payment method\nPrime Visa****0004\nOrder Summary\n"
+        f"Item(s) Subtotal: ${subtotal:.2f}Shipping & Handling: $0.00"
+        f"Total before tax: ${subtotal:.2f}Estimated tax to becollected: ${tax:.2f}\n"
+        f"Rewards Points: -${points:.2f}Grand Total: ${grand:.2f}\n"
+        "Delivered August 1\n" + itemlines
+    )
+    return orders_amazon.AmazonOrderReader().parse_text(txt)
+
+
+def test_reader_separates_rewards_from_savings():
+    od = _amazon_points_order(130.97, 7.86, 63.26, 75.57, [("Drawers", 130.97)])
+    assert od.rewards_points == 63.26
+    assert od.savings == 0.0            # points are NOT a discount
+    assert od.consumed_value == 138.83  # goods + tax, points not subtracted
+    assert od.sanity() == []            # consumed - points == grand total
+
+
+def test_partial_points_split_sums_to_card_charge(isolated_store):
+    # Card charge = grand total ($75.57); item children (full $138.83) + negative
+    # Rewards child (-$63.26) sum to the charge.
+    ts.save_transactions([_row("card", "AMAZON MKTPL*Z", 75.57, "2026-08-01")])
+    od = _amazon_points_order(130.97, 7.86, 63.26, 75.57, [("Drawers", 130.97)])
+    plan = order_service.plan_split(od)
+    assert plan.status == "ready"
+    assert round(sum(c.amount for c in plan.children), 2) == 75.57
+    rewards = [c for c in plan.children if c.category == "Rewards"]
+    assert len(rewards) == 1 and rewards[0].amount == -63.26
+
+
+def test_full_points_purchase_synthetic_zero_txn(isolated_store):
+    # 100% points ($0 grand total) -> no card charge. plan_points_purchase builds
+    # a $0 synthetic split; apply creates it. Children sum to 0.
+    ts.save_transactions([])
+    od = _amazon_points_order(299.99, 18.00, 317.99, 0.00, [("Dehumidifier", 299.99)])
+    assert order_service.is_fully_points_funded(od)
+    plan = order_service.plan_points_purchase(od)
+    assert plan.status == "points-purchase"
+    assert round(sum(c.amount for c in plan.children), 2) == 0.0
+    order_service.apply_points_purchase(plan)
+    rows = {t["transaction_id"]: t for t in ts.load_transactions()}
+    synth = rows[plan.matched_txn_id]
+    assert synth["amount"] == 0.0 and synth["category"] == "Split"
+    kids = synth["split_children"]
+    assert any(k["category"] == "Rewards" and k["amount"] == -317.99 for k in kids)
+    assert any(k["amount"] == 317.99 for k in kids)  # full consumption recorded
+    # idempotent: re-applying does not duplicate
+    plan2 = order_service.plan_points_purchase(od)
+    assert plan2.status == "already-applied"
+
+
+def test_points_purchase_actuals_records_consumption_not_rewards(isolated_store):
+    import actuals
+    txn = {"transaction_id": "p", "date": "2026-08-01", "year": 2026, "month": 8,
+           "name": "x", "amount": 0.0, "category": "Split",
+           "split_children": [
+               {"amount": 299.99, "category": "Household", "note": "Dehumidifier"},
+               {"amount": -299.99, "category": "Rewards", "note": "points"}]}
+    lines = dict(actuals._category_amounts(txn) and
+                 {c: a for c, a in actuals._category_amounts(txn)})
+    assert lines.get("Household") == 299.99
+    assert lines.get("Rewards") == -299.99  # present as a child, but Rewards is
+    # not a BUDGET/UNBUDGETED category so it is excluded from the spend aggregation.

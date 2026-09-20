@@ -61,7 +61,12 @@ class OrderDetail:
     delivered_date: dt.date | None = None
     items: list[OrderItem] = field(default_factory=list)
     subtotal: float | None = None
-    savings: float = 0.0  # order-level discount (positive number, subtracted)
+    savings: float = 0.0  # order-level discount (coupon/promo/S&S) - REDUCES consumption
+    # Reward points redeemed against this order (Amazon Visa points). NOT a
+    # discount - it is a second funding source. The full value is still consumed;
+    # points just paid for part of it. Kept separate from `savings` so consumption
+    # is not understated.
+    rewards_points: float = 0.0
     shipping: float = 0.0
     tax: float = 0.0
     tip: float = 0.0  # driver/delivery tip - an added charge (e.g. Amazon grocery)
@@ -80,24 +85,32 @@ class OrderDetail:
     def item_count(self) -> int:
         return len(self.items)
 
+    @property
+    def consumed_value(self) -> float | None:
+        """Full value of goods+fees consumed, regardless of how it was funded:
+        subtotal - real discounts + shipping + tax + tip. Reward points are NOT
+        subtracted here (they are funding, not a discount)."""
+        if self.subtotal is None:
+            return None
+        return round(self.subtotal - self.savings + self.shipping + self.tax + self.tip, 2)
+
     def sanity(self) -> list[str]:
         """Warnings if the parsed numbers don't reconcile.
 
-        Reconciliation: item prices sum to the subtotal; the total is
-        subtotal - savings + shipping + tax.
+        Reconciliation: item prices sum to the subtotal; the printed grand total
+        is the CASH portion = consumed_value - reward points redeemed.
         """
         warns: list[str] = []
         if self.subtotal is not None and self.items:
             s = round(sum(i.price for i in self.items), 2)
             if abs(s - self.subtotal) > 0.01:
                 warns.append(f"item prices sum to {s:.2f} but subtotal is {self.subtotal:.2f}")
-        if self.total is not None and self.subtotal is not None:
-            expected = round(self.subtotal - self.savings + self.shipping
-                             + self.tax + self.tip, 2)
+        if self.total is not None and self.consumed_value is not None:
+            expected = round(self.consumed_value - self.rewards_points, 2)
             if abs(expected - self.total) > 0.01:
                 warns.append(
-                    f"subtotal-savings+shipping+tax+tip = {expected:.2f} "
-                    f"but total is {self.total:.2f}")
+                    f"consumed({self.consumed_value:.2f}) - points({self.rewards_points:.2f}) "
+                    f"= {expected:.2f} but grand total is {self.total:.2f}")
         return warns
 
 
