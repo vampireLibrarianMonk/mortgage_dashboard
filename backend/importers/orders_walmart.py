@@ -47,7 +47,7 @@ _TAX_RE = re.compile(r"^Tax(?:es)?\b.*?\$([\d,]+\.\d{2})\s*$", re.IGNORECASE)
 _TOTAL_RE = re.compile(r"^Total\b.*?\$([\d,]+\.\d{2})\s*$", re.IGNORECASE)
 _BARE_MONEY_RE = re.compile(r"^\$([\d,]+\.\d{2})\s*$")
 _HEADER_SKIP = re.compile(
-    r"^(Invoice|Seller|Buyer|Order#|.*\d{4} order$|Patrick|\d+ .+ (?:St|Ave|Rd|Dr)\b|"
+    r"^(Invoice|Seller|Buyer|Order#|.*\d{4} order$|John|\d+ .+ (?:St|Ave|Rd|Dr)\b|"
     r"[A-Za-z ]+,\s*[A-Z]{2}\s+\d{5})", re.IGNORECASE)
 
 

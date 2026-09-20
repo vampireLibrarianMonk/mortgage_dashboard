@@ -275,7 +275,7 @@ def _cmd_set(args) -> list[str]:
 
 def _cmd_label(args) -> list[str]:
     # label <match text> = <label> [@<mask>] [$<amount>]
-    #   label transfer from pedro = bidet reimbursement - John Doe $-610
+    #   label transfer from alice = bidet reimbursement - John Doe $-610
     #   label usaa funds transfer = internal move @0001
     # Optional trailing @mask / $amount narrow which transactions get the note.
     # A label is a human note only; it does not change category or totals.
