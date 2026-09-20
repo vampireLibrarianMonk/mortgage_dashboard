@@ -49,10 +49,13 @@ from . import (
 _SAMPLES_DIR = Path(__file__).resolve().parent / "_samples"
 
 # Per-provider credential modules (kept in a small map so the CLI stays generic).
+# The two Gmail accounts share one module; its cred helpers take the provider name
+# so each account's secret is stored under its own key.
 from . import gmail as _gmail
 from . import proton as _proton
 
-_CRED_MODULES = {"gmail": _gmail, "proton": _proton}
+_CRED_MODULES = {"gmail": _gmail, "gmail2": _gmail, "proton": _proton}
+_GMAIL_PROVIDERS = ("gmail", "gmail2")
 
 
 def _parse_date(s: str | None) -> dt.date | None:
@@ -83,22 +86,28 @@ def cmd_providers(_args) -> int:
 def cmd_status(_args) -> int:
     for name in registered_providers():
         mod = _CRED_MODULES.get(name)
-        have = mod.credentials_available() if mod else False
+        if not mod:
+            have = False
+        elif name in _GMAIL_PROVIDERS:
+            have = mod.credentials_available(name)  # gmail helpers take the provider
+        else:
+            have = mod.credentials_available()
         print(f"  {name:8} credentials: {'stored' if have else '(none)'}")
     return 0
 
 
 def cmd_setup(args) -> int:
     name = args.provider
-    if name == "gmail":
-        address = input("Gmail address: ").strip()
+    if name in _GMAIL_PROVIDERS:
+        label = "Gmail" if name == "gmail" else f"Gmail ({name})"
+        address = input(f"{label} address: ").strip()
         print("Paste the 16-char app password (input hidden; requires 2FA on the account).")
         pw = getpass.getpass("App password: ")
         if not address or not pw:
             print("aborted: address and app password required.")
             return 1
-        _gmail.save_credentials(address, pw)
-        print("stored Gmail credentials (encrypted, Credential Manager).")
+        _gmail.save_credentials(address, pw, provider=name)
+        print(f"stored {name} credentials (encrypted, Credential Manager).")
         return 0
     if name == "proton":
         print("Proton Mail Bridge must be installed and running. Use the "
@@ -123,7 +132,8 @@ def cmd_clear(args) -> int:
     if not mod:
         print(f"unknown provider '{args.provider}'.")
         return 1
-    removed = mod.clear_credentials()
+    removed = (mod.clear_credentials(args.provider) if args.provider in _GMAIL_PROVIDERS
+               else mod.clear_credentials())
     print("cleared." if removed else "no credentials were stored.")
     return 0
 

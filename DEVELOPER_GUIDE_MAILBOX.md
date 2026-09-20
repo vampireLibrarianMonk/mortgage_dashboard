@@ -54,7 +54,7 @@ backend/mailbox/
 ├── __init__.py       # skeleton: config, allowlist, models, provider interface, registry
 ├── creds.py          # encrypted credential storage (wraps credential_store / Credential Manager)
 ├── _imapbase.py      # shared read-only IMAP logic (search/fetch/parse) reused by providers
-├── gmail.py          # Gmail provider (IMAP + app password)
+├── gmail.py          # Gmail provider(s) (IMAP + app password) - gmail + gmail2
 ├── proton.py         # Proton provider (Proton Mail Bridge, localhost IMAP)
 ├── cli.py            # standalone dev harness: python -m mailbox.cli ...
 └── _samples/         # (gitignored) dumped .eml samples for parser development
@@ -145,6 +145,25 @@ python -m mailbox.cli dump gmail --vendor walmart --limit 1
   they are stripped).
 - Stored encrypted as JSON `{address, app_password}` under
   `mortgage_dashboard_mail_gmail_imap`.
+
+#### A second Gmail account (`gmail2`)
+
+Multiple Gmail mailboxes are supported as separate providers that share identical
+IMAP logic but distinct credential slots, so both can be configured and queried
+side by side (no swapping/overwriting):
+
+```
+python -m mailbox.cli setup gmail2     # store the 2nd account's app password
+python -m mailbox.cli status           # shows gmail + gmail2 separately
+python -m mailbox.cli test gmail2
+python -m mailbox.cli search gmail2 --orders-only --since 2026-07-01
+```
+
+`gmail2` stores its secret under `mortgage_dashboard_mail_gmail2_imap`, fully
+isolated from `gmail`. Both are subclasses of the same `_GmailImapProviderBase`;
+adding a third account is one more `@register_provider` subclass with a new
+`name`. The credential helpers in `gmail.py` take a `provider=` argument
+(defaulting to `"gmail"` for back-compat).
 
 ### Proton (Proton Mail Bridge)
 
