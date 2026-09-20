@@ -148,6 +148,13 @@ def _cmd_sync(_args) -> list[str]:
                         "bank": slug,
                         "account_id": acct_id,
                         "account_mask": masks.get(acct_id),
+                        # Pending state + the id of the pending row a posted txn
+                        # supersedes. transactions_get returns BOTH the pending and
+                        # (later) the posted copy of the same charge as separate
+                        # rows; upsert uses these to skip pending and reconcile the
+                        # posted one over any stale pending row (see txn_store).
+                        "pending": bool(t.get("pending", False)),
+                        "pending_transaction_id": t.get("pending_transaction_id"),
                     })
                 offset += len(resp["transactions"])
                 if offset >= total or not resp["transactions"]:

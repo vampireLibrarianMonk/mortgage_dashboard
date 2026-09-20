@@ -292,3 +292,148 @@ def test_unsplit_clears_split_order_no(make_txn):
     assert row["category"] == "Uncategorized"
     assert "split_children" not in row
     assert "split_order_no" not in row  # the stamp is gone
+
+
+# --- pending transactions: skip on ingest + reconcile posted-over-pending ------
+#
+# transactions_get returns BOTH the pending and (later) the posted copy of a
+# charge as separate rows. The pending copy has a temporary id, a bare merchant
+# name (no reference code), and authorized_date == posted date. Without handling,
+# it persists forever next to the posted row - a phantom duplicate that
+# double-counts. upsert must (a) never store a pending row, and (b) when a posted
+# row arrives carrying pending_transaction_id, drop the superseded pending row.
+
+
+def test_upsert_skips_pending_transaction(make_txn):
+    added, skipped = ts.upsert_transactions(
+        [make_txn("p1", "Amazon.com", 36.13, raw=True, pending=True)]
+    )
+    assert (added, skipped) == (0, 1)
+    assert ts.load_transactions() == []  # nothing stored
+
+
+def test_upsert_stores_posted_transaction_normally(make_txn):
+    added, skipped = ts.upsert_transactions(
+        [make_txn("t1", "Amazon.com*ABC", 36.13, raw=True, pending=False)]
+    )
+    assert (added, skipped) == (1, 0)
+    assert ts.load_transactions()[0]["transaction_id"] == "t1"
+
+
+def test_posted_supersedes_stored_pending_row(make_txn):
+    # A pending row slipped in from an earlier sync (before this fix).
+    ts.save_transactions([make_txn("pending_id", "Amazon.com", 36.13)])
+    # The posted copy arrives, pointing back at the pending id.
+    posted = make_txn("posted_id", "Amazon.com*5R0Q13D01", 36.13, raw=True,
+                      pending=False, pending_transaction_id="pending_id")
+    added, skipped = ts.upsert_transactions([posted])
+    rows = ts.load_transactions()
+    ids = {r["transaction_id"] for r in rows}
+    assert ids == {"posted_id"}          # pending row removed, only posted remains
+    assert added == 1
+
+
+def test_posted_supersedes_pending_within_same_batch(make_txn):
+    # Both pending and posted copies arrive in ONE sync batch (common): the pending
+    # is skipped, the posted is stored, and no duplicate remains.
+    batch = [
+        make_txn("pending_id", "Amazon.com", 36.13, raw=True, pending=True),
+        make_txn("posted_id", "Amazon.com*5R0Q13D01", 36.13, raw=True,
+                 pending=False, pending_transaction_id="pending_id"),
+    ]
+    ts.upsert_transactions(batch)
+    ids = {r["transaction_id"] for r in ts.load_transactions()}
+    assert ids == {"posted_id"}
+
+
+def test_reconcile_carries_user_category_and_split_to_posted(make_txn):
+    # User itemized the charge while it was pending; when it posts, the split must
+    # move to the posted row (amounts match), not be lost.
+    ts.save_transactions([make_txn("pending_id", "Amazon.com", 36.13)])
+    ts.split_transaction("pending_id",
+                         [{"amount": 36.13, "category": "ChildCare", "note": "Kate Farms"}],
+                         order_no="11300637303230655")
+    posted = make_txn("posted_id", "Amazon.com*5R0Q13D01", 36.13, raw=True,
+                      pending=False, pending_transaction_id="pending_id")
+    ts.upsert_transactions([posted])
+    rows = {r["transaction_id"]: r for r in ts.load_transactions()}
+    assert "pending_id" not in rows
+    p = rows["posted_id"]
+    assert p["category"] == "Split"
+    assert p["split_children"][0]["category"] == "ChildCare"
+    assert p["split_order_no"] == "11300637303230655"
+
+
+def test_reconcile_user_pending_category_beats_a_merchant_rule(make_txn):
+    # The user manually categorized the charge while pending. That explicit choice
+    # must survive the posted row - and it takes precedence over a merchant rule
+    # that would otherwise fire (manual intent beats an auto-rule), consistent with
+    # how a one-off `set` overrides rule-driven categorization elsewhere.
+    ts.add_rule("amazon", "Household")
+    ts.save_transactions([make_txn("pending_id", "Amazon.com", 36.13, category="Discretionary")])
+    posted = make_txn("posted_id", "Amazon.com*ABC", 36.13, raw=True,
+                      pending=False, pending_transaction_id="pending_id")
+    ts.upsert_transactions([posted])
+    rows = {r["transaction_id"]: r for r in ts.load_transactions()}
+    assert "pending_id" not in rows
+    assert rows["posted_id"]["category"] == "Discretionary"  # user's pending choice wins
+
+
+def test_reconcile_carries_label_when_posted_has_none(make_txn):
+    seed = make_txn("pending_id", "FCWA", 40.0)
+    seed["label"] = "Fairfax Water"
+    ts.save_transactions([seed])
+    posted = make_txn("posted_id", "FCWA*X", 40.0, raw=True, pending=False,
+                      pending_transaction_id="pending_id")
+    ts.upsert_transactions([posted])
+    rows = {r["transaction_id"]: r for r in ts.load_transactions()}
+    assert "pending_id" not in rows
+    assert rows["posted_id"]["label"] == "Fairfax Water"
+
+
+def test_posted_with_unknown_pending_ref_is_just_added(make_txn):
+    # pending_transaction_id points at a row we never stored (already reconciled or
+    # this fix was added after that pending row aged out) - just add the posted row.
+    added, skipped = ts.upsert_transactions(
+        [make_txn("posted_id", "Amazon.com*ABC", 36.13, raw=True, pending=False,
+                  pending_transaction_id="never_seen")]
+    )
+    assert added == 1
+    assert ts.load_transactions()[0]["transaction_id"] == "posted_id"
+
+
+def test_non_pending_missing_field_behaves_as_before(make_txn):
+    # Rows without any pending fields (older sync shape) are treated as posted.
+    added, _ = ts.upsert_transactions([make_txn("t1", "Costco", 10.0, raw=True)])
+    assert added == 1
+    assert ts.load_transactions()[0]["transaction_id"] == "t1"
+
+
+def test_regression_kate_farms_pending_posted_no_phantom_duplicate(make_txn):
+    """Regression for the real incident: a $36.13 Kate Farms charge arrived from
+    Plaid as a bare-name pending row (id P, name 'Amazon.com', authorized==posted)
+    AND, a day later, as the posted row (id Q, name 'Amazon.com*5R0Q13D01') that
+    references P. Before the fix both persisted -> a phantom second $36.13 that
+    looked like a separate order. After the fix, exactly one row survives (the
+    posted one) and there is no duplicate to chase."""
+    # First sync: only the pending copy is available.
+    ts.upsert_transactions([
+        make_txn("P", "Amazon.com", 36.13, raw=True, date="2026-09-17",
+                 authorized_date="2026-09-17", pending=True),
+    ])
+    assert ts.load_transactions() == []  # pending not stored
+
+    # Next sync: the posted copy arrives (references the pending id). Even if the
+    # pending copy is re-sent in the same batch, only the posted row remains.
+    ts.upsert_transactions([
+        make_txn("P", "Amazon.com", 36.13, raw=True, date="2026-09-17",
+                 authorized_date="2026-09-17", pending=True),
+        make_txn("Q", "Amazon.com*5R0Q13D01", 36.13, raw=True, date="2026-09-18",
+                 authorized_date="2026-09-17", pending=False,
+                 pending_transaction_id="P"),
+    ])
+    rows = ts.load_transactions()
+    amazon_3613 = [r for r in rows if abs(r["amount"] - 36.13) < 0.005]
+    assert len(amazon_3613) == 1                       # no phantom duplicate
+    assert amazon_3613[0]["transaction_id"] == "Q"     # the posted one
+    assert "*" in amazon_3613[0]["name"]               # carries the reference code

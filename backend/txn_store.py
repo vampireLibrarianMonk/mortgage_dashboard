@@ -175,6 +175,26 @@ def upsert_transactions(new_txns: list[dict]) -> tuple[int, int]:
     added = skipped = 0
     for t in new_txns:
         tid = t["transaction_id"]
+
+        # A posted transaction that supersedes a pending one carries the pending
+        # row's id in `pending_transaction_id`. transactions_get returns both the
+        # pending and the posted copy of a charge as separate rows; without this,
+        # the pending row (bare merchant name, no reference code, authorized==posted
+        # date) would persist forever alongside the posted row - a phantom duplicate
+        # that double-counts. Drop the superseded pending row now, preserving any
+        # category/split the user had applied to it by carrying it to the posted row.
+        superseded = t.get("pending_transaction_id")
+        if superseded and superseded in by_id:
+            stale = by_id.pop(superseded)
+            _carry_user_edits(stale, t)
+
+        # Never store a still-pending transaction. Its posted copy will arrive on a
+        # later sync with the permanent id + real merchant name; storing the pending
+        # copy only creates a duplicate to reconcile away.
+        if t.get("pending"):
+            skipped += 1
+            continue
+
         if tid in by_id:
             cur = by_id[tid]
             for f in _BACKFILL_FIELDS:
@@ -191,6 +211,23 @@ def upsert_transactions(new_txns: list[dict]) -> tuple[int, int]:
         added += 1
     save_transactions(list(by_id.values()))
     return added, skipped
+
+
+def _carry_user_edits(stale: dict, posted: dict) -> None:
+    """When a posted transaction supersedes a stored pending row, carry the user's
+    manual work (category, label, and any split) from the pending row onto the
+    posted one - unless the posted row already carries its own. Amounts match (same
+    charge), so a split's children still reconcile. Prevents losing categorization
+    when a charge the user already filed while pending finally posts."""
+    if stale.get("category") and stale["category"] != "Uncategorized" \
+            and posted.get("category", "Uncategorized") == "Uncategorized":
+        posted["category"] = stale["category"]
+        if stale.get("split_children"):
+            posted["split_children"] = stale["split_children"]
+        if stale.get("split_order_no"):
+            posted["split_order_no"] = stale["split_order_no"]
+    if stale.get("label") and not posted.get("label"):
+        posted["label"] = stale["label"]
 
 
 # --- Merchant rules -----------------------------------------------------------
