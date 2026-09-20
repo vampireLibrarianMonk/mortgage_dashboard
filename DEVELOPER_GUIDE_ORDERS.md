@@ -64,38 +64,68 @@ children sum exactly to the order value (last child absorbs rounding).
 
 - **109 orders** processed (105 Amazon, 3 Walmart, 1 Target), dates 2026-06-19 →
   2026-09-18.
-- **101 applied** as splits (117 child items, all sums reconcile).
-- **8 remain un-itemized** — see the gap inventory below.
+- **105 applied** as splits (all child sums reconcile, 0 mismatches): 101 direct
+  card-charge matches + 2 Whole Foods grocery matches + 2 synthetic
+  points-purchases ($0 card, 100%-points).
+- **4 remain un-itemized** — 1 partial-points/multi-shipment edge case (Vtopmart,
+  its cash is already captured as fragment rows) and 3 pure data gaps awaiting a
+  `sync`. See the gap inventory below.
 
-## Atomicity gaps — what blocks the remaining purchases
+## Atomicity inventory — the originally-blocked purchases
 
-| Order | Amount | Blocker | Category |
-|-------|--------|---------|----------|
-| Dehumidifier (07-29) | $0.00 | 100% paid by Amazon reward points — no card charge exists | **Rewards (100%)** |
-| Printer Stand (07-31) | $0.00 | 100% points — no card charge | **Rewards (100%)** |
-| Vtopmart drawers (08-01) | $75.57 cash / $138.83 consumed | Partly points ($63.26) + multi-shipment; grand total ≠ any single charge | **Rewards (partial)** |
-| Whole Foods (08-19) | $16.67 → charged $16.84 | Charge is named "Whole Foods" not Amazon; grocery weight/substitution drift | **Grocery** |
-| Whole Foods (08-21) | $37.75 → charged $36.10 | Same | **Grocery** |
+Of the 8 orders that couldn't be matched by the first pass, 4 are now resolved
+(grocery + points-purchase) and 4 remain (1 edge case, 3 data gaps).
+
+| Order | Amount | Blocker | Status |
+|-------|--------|---------|--------|
+| Dehumidifier (07-29) | $0.00 | 100% Amazon reward points — no card charge | **✅ Resolved — synthetic $0 points-purchase** |
+| Printer Stand (07-31) | $0.00 | 100% points — no card charge | **✅ Resolved — synthetic $0 points-purchase** |
+| Whole Foods (08-19) | $16.67 → charged $16.84 | Charge named "Whole Foods" not Amazon; grocery drift | **✅ Resolved — grocery alias + drift, scaled to charge** |
+| Whole Foods (08-21) | $37.75 → charged $36.10 | Same | **✅ Resolved — grocery alias + drift, scaled to charge** |
+| Vtopmart drawers (08-01) | $75.57 cash / $138.83 consumed | Partly points ($63.26) + multi-shipment; grand total ≠ any single charge — cash already captured as fragment rows ($33.18 + $42.39) | **Left un-itemized (edge case)** |
 | Whole Foods ice cream (08-28) | $34.87 | Charge not yet in synced data | **Data gap (sync)** |
 | Goo Gone Walmart (09-17) | $13.48 | PayPal-funded; charge not posted to USAA yet | **Data gap (sync/PayPal)** |
 | Pampers (09-18) | $31.79 | Ordered 09-18, charge not posted yet | **Data gap (sync)** |
 
 ### Gap categories and their fixes
 
-1. **Grocery (Whole Foods / Amazon Fresh)** — the charge posts under a *different*
-   merchant name ("Whole Foods") and the final amount *drifts* from the PDF
-   estimate (substitutions, weight-priced produce). Fix: treat Whole Foods as an
-   Amazon-family vendor alias, allow a small amount tolerance, guard with an exact
-   date match, and scale the split children to the **actual charge**. *(Planned —
-   task #6.)*
+1. **Grocery (Whole Foods / Amazon Fresh)** — ✅ *implemented.* The charge posts
+   under a *different* merchant name ("Whole Foods") and the final amount *drifts*
+   from the PDF estimate (substitutions, weight-priced produce). The reader
+   (`orders_amazon._GROCERY_RE`) flags these orders (`OrderDetail.grocery=True`)
+   and sets `match_names` aliases. The matcher then allows a small amount
+   tolerance for grocery orders only (`_GROCERY_DRIFT_PCT=0.08`,
+   `_GROCERY_DRIFT_ABS=$3.00`), **guarded** by an exact authorized-date match and
+   the vendor/alias name check so the loose amount can't false-match. Split
+   children are **scaled to the actual charge** (`plan_split` sets
+   `target_total = charge amount`) so they reconcile to the real bank amount.
 
-2. **Rewards points** — orders paid partly or fully with Amazon Visa reward
-   points. The card charge (grand total) is less than what was consumed. Fix: the
-   **rewards funding model** — record the full consumed value as the spend, with
-   points recorded as a second funding/income stream (per card program: NFCU,
-   USAA, Chase). Track *redeemed* points only (derivable from the PDF), not a
-   points balance. 100%-points orders have no card charge and need a standalone
-   record. *(Planned — task #7.)*
+2. **Rewards points** — ✅ *implemented (funding model).* Orders paid partly or
+   fully with Amazon Visa reward points: the card charge (grand total) is less
+   than what was consumed. The reader separates points (`OrderDetail.rewards_points`)
+   from real discounts (`savings`) and exposes `consumed_value`. The split records
+   the **full consumed value** across item children plus a **negative "Rewards"
+   child** equal to the points, so the children sum to the card charge and the
+   budget shows true consumption plus a rewards funding line.
+   - **100%-points orders** ($0 card charge, no bank row): `plan_points_purchase`
+     / `apply_points_purchase` create a **synthetic $0 transaction** (stable id
+     `points_<vendor>_<order#>`, `source='points_purchase'`, `bank='rewards'`;
+     re-runs dedupe via upsert) whose children still sum to $0. Applied for the
+     Dehumidifier ($317.99) and Printer Stand ($117.33).
+   - **actuals** is unchanged and correct: item children land in their budget
+     categories (true consumption); the "Rewards" child is excluded from spend
+     because "Rewards" is not a budget/unbudgeted category. *(A visible
+     rewards-income total is not surfaced in actuals output — possible future
+     enhancement.)*
+   - **NFCU / USAA cash-back:** due-diligence finding — these programs redeem
+     rewards as a *separate account credit* (statement credit or deposit), **not**
+     applied at the point of purchase. So they surface as their own redemption
+     transaction tagged "Rewards" — no per-order logic needed. Only Amazon/Chase
+     points appear at-purchase (from the order PDF).
+   - **Edge case — Vtopmart (08-01):** partial points *and* multi-shipment, so the
+     grand total matches no single card charge; the cash portion is already
+     captured as the fragment rows ($33.18 + $42.39). Creating a synthetic row
+     would double-count, so this order is left un-itemized by design.
 
 3. **Data gaps (unposted / un-synced)** — the charge simply isn't in the store
    yet (recent order, PayPal settlement lag, or the account hasn't been synced
