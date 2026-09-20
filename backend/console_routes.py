@@ -746,6 +746,55 @@ def _split_lines(t: dict):
         yield t.get("category"), float(t.get("amount", 0.0))
 
 
+def _month_data_span() -> dict[str, tuple[str, str]]:
+    """month-key -> (earliest ISO date, latest ISO date) of transactions in it.
+
+    Used to flag a *partial* month: if the data starts well after the 1st (the
+    bank sync history window began mid-month) the month is incomplete, so a big
+    "under budget" is an artifact of missing days, not real underspend."""
+    span: dict[str, list[str]] = {}
+    for t in ts.load_transactions():
+        d = t.get("date")
+        if not d:
+            continue
+        mk = f"{int(t['year']):04d}-{int(t['month']):02d}"
+        lo_hi = span.setdefault(mk, [d, d])
+        if d < lo_hi[0]:
+            lo_hi[0] = d
+        if d > lo_hi[1]:
+            lo_hi[1] = d
+    return {mk: (lo, hi) for mk, (lo, hi) in span.items()}
+
+
+def _partial_note(mk: str, span: dict[str, tuple[str, str]]) -> str:
+    """A ' (partial ...)' suffix when a month's data doesn't cover the full month.
+
+    Two cases:
+    - Data STARTS after the 3rd: the bank sync history window began mid-month, so
+      the early days are missing (e.g. June starts 2026-06-18).
+    - The month is the LATEST/in-progress one: it's still accruing, so its total
+      is naturally short of a full month.
+
+    Note we compare on the transaction's own month (mk = its authorized_date
+    bucket). The earliest date is taken from rows bucketed to this month; a row
+    whose posted date spilled into the next calendar month does not make an
+    otherwise-complete historical month look "in progress" - only the newest
+    month in the data is treated as in-progress."""
+    lohi = span.get(mk)
+    if not lohi:
+        return ""
+    lo, _hi = lohi
+    # Earliest in-month day: only count dates that actually fall in this month
+    # (a posted date can spill into the next month while the bucket stays here).
+    start_day = int(lo[8:10]) if lo[:7] == mk else 1
+    if start_day > 3:
+        return f"  (partial - data from {lo})"
+    # In-progress: only the most recent month present in the data.
+    if mk == max(span):
+        return "  (in progress - current month, still accruing)"
+    return ""
+
+
 def _cmd_budget(args) -> list[str]:
     """Budget vs Actual, month by month, as ascii tables.
 
@@ -782,24 +831,33 @@ def _cmd_budget(args) -> list[str]:
         mk = args[0]
         if mk not in months:
             return [f"no actuals for {mk}. available: {', '.join(months)}"]
-        return _category_table(f"{mk}  {address}", months[mk]["categories"], targets, uncat,
-                               unbudgeted=months[mk]["unbudgeted_outflow"])
+        partial = _partial_note(mk, _month_data_span())
+        return _category_table(f"{mk}  {address}{partial}", months[mk]["categories"], targets,
+                               uncat, unbudgeted=months[mk]["unbudgeted_outflow"])
 
     # default: month-by-month totals
+    span = _month_data_span()
     lines = [f"Budget vs Actual - monthly  ({address})",
              f"monthly budget target: {_fmt(monthly_total)}", ""]
     hdr = f"  {'month':7}  {'actual':>12}  {'budget':>12}  {'variance':>13}  usage"
     lines.append(hdr)
     lines.append("  " + "-" * (len(hdr) - 2))
+    any_partial = False
     for mk, v in months.items():
         act = round(sum(v["categories"].values()), 2)
         var = act - monthly_total
         flag = "over" if var > 0 else "under"
+        partial = _partial_note(mk, span)
+        if partial:
+            any_partial = True
         lines.append(f"  {mk:7}  {_fmt(act):>12}  {_fmt(monthly_total):>12}  "
-                     f"{('+' if var > 0 else '')}{_fmt(var):>12} {flag:>5}  {_bar(act, monthly_total)}")
+                     f"{('+' if var > 0 else '')}{_fmt(var):>12} {flag:>5}  {_bar(act, monthly_total)}{partial}")
     lines.append("")
     lines.append(f"  tip: `budget {next(iter(months))}` for a category breakdown; "
                  "`budget year` for YTD.")
+    if any_partial:
+        lines.append("  note: a partial/in-progress month covers only some days, so its "
+                     "'under budget' is expected (incomplete data), not real underspend.")
     if uncat:
         lines.append(f"  note: {uncat} transaction(s) still Uncategorized - not counted "
                      "in any category above.")

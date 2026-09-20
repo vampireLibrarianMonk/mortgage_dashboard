@@ -256,3 +256,66 @@ def test_budget_unknown_month(make_txn, monkeypatch):
     ts.save_transactions([make_txn("t1", "x", 10.0, category="Household", year=2026, month=7)])
     out = run("budget 2026-99")
     assert any("no actuals for 2026-99" in ln for ln in out)
+
+
+# --- budget: partial / in-progress month flagging ------------------------------
+
+def test_budget_flags_partial_month_when_data_starts_late(make_txn, monkeypatch):
+    import txn_store as ts
+    _fixed_targets(monkeypatch)
+    # Two months: June data starts on the 18th (partial), July is a full month
+    # (starts on the 2nd) and is NOT the latest month, so it must be unflagged.
+    ts.save_transactions([
+        make_txn("j1", "Grocery", 100.0, category="Household", year=2026, month=6,
+                 date="2026-06-18"),
+        make_txn("j2", "Grocery", 50.0, category="Household", year=2026, month=6,
+                 date="2026-06-25"),
+        make_txn("k1", "Grocery", 100.0, category="Household", year=2026, month=7,
+                 date="2026-07-02"),
+        make_txn("k2", "Grocery", 100.0, category="Household", year=2026, month=7,
+                 date="2026-07-30"),
+        # An August txn so July is a COMPLETE, non-latest month.
+        make_txn("l1", "Grocery", 100.0, category="Household", year=2026, month=8,
+                 date="2026-08-10"),
+    ])
+    out = "\n".join(run("budget"))
+    # June flagged partial with its start date
+    assert "partial - data from 2026-06-18" in out
+    # July is a complete, non-latest month -> no partial/in-progress tag on its row
+    jul_line = [ln for ln in out.splitlines() if "2026-07" in ln][0]
+    assert "partial" not in jul_line and "in progress" not in jul_line
+
+
+def test_budget_flags_latest_month_in_progress(make_txn, monkeypatch):
+    import txn_store as ts
+    _fixed_targets(monkeypatch)
+    ts.save_transactions([
+        make_txn("a1", "Grocery", 100.0, category="Household", year=2026, month=7,
+                 date="2026-07-02"),
+        make_txn("b1", "Grocery", 100.0, category="Household", year=2026, month=8,
+                 date="2026-08-02"),
+    ])
+    out = "\n".join(run("budget"))
+    # The latest month (August) is flagged in-progress; July (complete) is not.
+    aug_line = [ln for ln in out.splitlines() if "2026-08" in ln][0]
+    jul_line = [ln for ln in out.splitlines() if "2026-07" in ln][0]
+    assert "in progress" in aug_line
+    assert "in progress" not in jul_line and "partial" not in jul_line
+
+
+def test_budget_posted_date_spill_does_not_flag_complete_month(make_txn, monkeypatch):
+    # A July txn whose POSTED date spilled into August must not make July look
+    # in-progress; July's bucket is complete and it is not the latest month.
+    import txn_store as ts
+    _fixed_targets(monkeypatch)
+    ts.save_transactions([
+        make_txn("j1", "Grocery", 100.0, category="Household", year=2026, month=7,
+                 date="2026-07-02"),
+        make_txn("j2", "Late Post", 50.0, category="Household", year=2026, month=7,
+                 date="2026-08-03"),  # authorized July, posted August
+        make_txn("a1", "Grocery", 100.0, category="Household", year=2026, month=8,
+                 date="2026-08-15"),
+    ])
+    out = "\n".join(run("budget"))
+    jul_line = [ln for ln in out.splitlines() if "2026-07" in ln][0]
+    assert "partial" not in jul_line and "in progress" not in jul_line
