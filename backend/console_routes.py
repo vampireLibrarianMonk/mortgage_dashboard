@@ -482,13 +482,28 @@ def _cmd_orders(args) -> list[str]:
     # (`orders go confirm`) to also apply amount+date-only matches (needs-confirm).
     include_unconfirmed = len(args) > 1 and args[1].lower() in ("confirm", "force", "all")
 
-    ready_plans, confirm_plans = [], []
+    ready_plans, confirm_plans, tip_plans = [], [], []
     for p, res in order_details:
         order = res.order
         plan = order_service.plan_split(order)
+        # Fallback: an order billed as goods + a separate "Amazon Tips" charge
+        # won't match a single charge. Retry as a two-charge (goods + tip) split.
+        if plan.status == "no-match" and (getattr(order, "tip", 0.0) or 0.0) > 0:
+            tsplit = order_service.plan_grocery_tip_split(order)
+            if tsplit.status == "ready-tip-split":
+                plan = tsplit
         lines.append("")
         lines.append(f"{res.slug or p.name}  [{plan.status}]")
-        if plan.status in ("ready", "needs-confirm"):
+        if plan.status == "ready-tip-split":
+            g, tx = plan.matched_txn, plan.tip_txn
+            lines.append(f"  -> goods {g['date']} {_fmt(g['amount'])} {g.get('name','')[:20]} "
+                         f"+ tip {tx['date']} {_fmt(tx['amount'])} (2 charges):")
+            for ch in plan.children:
+                lines.append(f"       {_fmt(ch.amount):>11}  {ch.category:12} {ch.note[:40]}")
+            for ch in plan.tip_children:
+                lines.append(f"       {_fmt(ch.amount):>11}  {ch.category:12} {ch.note[:40]}")
+            tip_plans.append(plan)
+        elif plan.status in ("ready", "needs-confirm"):
             m = plan.matched_txn
             lines.append(f"  -> {m['date']} {_fmt(m['amount'])} {m.get('name','')[:24]} "
                          f"(split into {len(plan.children)} item(s)):")
@@ -511,7 +526,7 @@ def _cmd_orders(args) -> list[str]:
     to_apply = ready_plans + (confirm_plans if include_unconfirmed else [])
     if do_commit:
         lines.append("")
-        if not to_apply:
+        if not to_apply and not tip_plans:
             lines.append("nothing ready to apply."
                          + (f" ({len(confirm_plans)} need `orders go confirm`)" if confirm_plans else ""))
         else:
@@ -524,6 +539,13 @@ def _cmd_orders(args) -> list[str]:
                 except Exception as e:  # noqa: BLE001
                     lines.append(f"  error splitting {plan.order.vendor} "
                                  f"${plan.order.total:.2f}: {e}")
+            for plan in tip_plans:
+                try:
+                    order_service.apply_grocery_tip_split(plan)
+                    lines.append(f"  split {plan.order.vendor} ${plan.order.total:.2f} "
+                                 f"as goods + tip (2 charges)")
+                except Exception as e:  # noqa: BLE001
+                    lines.append(f"  error splitting {plan.order.vendor} (tip-split): {e}")
             lines.append("done. `list Uncategorized` to categorize items, "
                          "`summary` to refresh, `undo` to revert.")
     else:

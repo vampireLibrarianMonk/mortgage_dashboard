@@ -80,11 +80,21 @@ class OrderSplitPlan:
     candidates: list[dict] = field(default_factory=list)  # when ambiguous
     status: str = ""  # "ready" | "no-match" | "ambiguous" | "no-total"
     warnings: list[str] = field(default_factory=list)
+    # For an order billed as two charges (goods + a separate tip charge): the
+    # second parent and its children. The primary matched_txn is the goods charge.
+    tip_txn_id: str | None = None
+    tip_txn: dict | None = None
+    tip_children: list[SplitChildPlan] = field(default_factory=list)
 
     @property
     def child_dicts(self) -> list[dict]:
         return [{"amount": c.amount, "category": c.category, "note": c.note}
                 for c in self.children]
+
+    @property
+    def tip_child_dicts(self) -> list[dict]:
+        return [{"amount": c.amount, "category": c.category, "note": c.note}
+                for c in self.tip_children]
 
 
 def _txn_name(t: dict) -> str:
@@ -476,6 +486,157 @@ def apply_points_purchase(plan: OrderSplitPlan) -> dict:
     ts.upsert_transactions([synth])  # dedupes by id if re-run
     return ts.split_transaction(plan.matched_txn_id, plan.child_dicts,
                                 order_no=order.order_no)
+
+
+# --- goods + separate-tip charge (grocery/Fresh delivery) ---------------------
+#
+# Discovery (grounded in the data): an Amazon order's delivery tip is SOMETIMES
+# bundled into the one order charge (then the existing single-charge path already
+# spreads it across items like tax) and SOMETIMES billed as its OWN charge named
+# "Amazon Tips". Observed only on a Fresh/Whole Foods grocery order so far, where
+# the goods also drift (weight/substitution).
+#
+# Pairing identity (strong, so the date-residual risk is acceptable): pair an
+# order (tip > 0) with a separate tip charge only when a charge named "Amazon
+# Tips" exists whose amount EQUALS order.tip to the cent AND is dated within the
+# charge window, AND a goods charge also exists for (total - tip) (+/- grocery
+# drift) in that window. Then both charges are split; the tip is distributed
+# across the SAME item categories (like tax), not left as a standalone line.
+
+_TIP_NAME_RE = re.compile(r"amazon\s*tips", re.IGNORECASE)
+
+
+def _find_tip_charge(order: OrderDetail) -> dict | None:
+    """A separate 'Amazon Tips' charge equal to order.tip, in the charge window,
+    not already split/ignored. None if the tip was bundled (no such charge)."""
+    tip = round(getattr(order, "tip", 0.0) or 0.0, 2)
+    if tip <= 0:
+        return None
+    low, high = _charge_window(order)
+    for t in ts.load_transactions():
+        if t.get("category") in _EXCLUDED_MATCH_CATEGORIES:
+            continue
+        if not _TIP_NAME_RE.search(_txn_name(t)):
+            continue
+        if abs(round(abs(float(t.get("amount", 0.0))), 2) - tip) > _AMOUNT_TOLERANCE:
+            continue
+        td = _charge_date(t)
+        if low is not None and high is not None and td is not None and not (low <= td <= high):
+            continue
+        return t
+    return None
+
+
+def _find_goods_charge(order: OrderDetail, goods_total: float) -> dict | None:
+    """The goods charge for a split-tip order: amount ~ (total - tip), grocery
+    drift allowed, vendor/alias-named when grocery, in-window, not excluded."""
+    goods_total = round(goods_total, 2)
+    low, high = _charge_window(order)
+    amt_tol = max(_AMOUNT_TOLERANCE, round(goods_total * _GROCERY_DRIFT_PCT, 2),
+                  _GROCERY_DRIFT_ABS) if order.grocery else _AMOUNT_TOLERANCE
+    best = None
+    for t in ts.load_transactions():
+        if t.get("category") in _EXCLUDED_MATCH_CATEGORIES or t.get("offset"):
+            continue
+        if _NON_PURCHASE_RE.search(_txn_name(t)) or _TIP_NAME_RE.search(_txn_name(t)):
+            continue
+        if abs(round(abs(float(t.get("amount", 0.0))), 2) - goods_total) > amt_tol:
+            continue
+        if order.grocery and not _name_matches(order, t):
+            continue
+        td = _charge_date(t)
+        if low is not None and high is not None and td is not None and not (low <= td <= high):
+            continue
+        if best is None or _gap(order, t) < _gap(order, best):
+            best = t
+    return best
+
+
+def _tip_children(order: OrderDetail, tip_charge_amt: float,
+                  item_children: list[SplitChildPlan]) -> list[SplitChildPlan]:
+    """Distribute the tip charge across the SAME item categories as the goods
+    (proportional to each item child's amount), so the tip lands like tax rather
+    than as a standalone line. Children sum exactly to the tip charge."""
+    tip_charge_amt = round(tip_charge_amt, 2)
+    base = round(sum(c.amount for c in item_children), 2) or 1.0
+    out: list[SplitChildPlan] = []
+    running = 0.0
+    n = len(item_children)
+    for idx, ch in enumerate(item_children):
+        if idx == n - 1:
+            amt = round(tip_charge_amt - running, 2)
+        else:
+            amt = round(tip_charge_amt * (ch.amount / base), 2)
+            running = round(running + amt, 2)
+        out.append(SplitChildPlan(amount=amt, category=ch.category, note=f"tip: {ch.note}"))
+    return out
+
+
+def plan_grocery_tip_split(order: OrderDetail) -> OrderSplitPlan:
+    """Plan a two-charge split for an order billed as goods + a separate tip.
+
+    Only used when the single-charge matcher found nothing and the order has a
+    tip that was billed separately (a matching 'Amazon Tips' charge exists). The
+    goods charge is itemized (drift-scaled for grocery); the tip charge is split
+    across the same item categories so the tip is spread like tax.
+    """
+    plan = OrderSplitPlan(order=order)
+    if order.total is None:
+        plan.status = "no-total"
+        return plan
+    if order.order_no and order.order_no in _applied_order_nos():
+        plan.status = "already-applied"
+        plan.warnings.append(f"order {order.order_no} is already itemized")
+        return plan
+    tip = round(getattr(order, "tip", 0.0) or 0.0, 2)
+    if tip <= 0:
+        plan.status = "no-match"
+        return plan
+    tip_charge = _find_tip_charge(order)
+    if tip_charge is None:
+        plan.status = "no-match"  # tip was bundled (or no tip charge synced yet)
+        return plan
+    goods_charge = _find_goods_charge(order, round(order.total, 2) - tip)
+    if goods_charge is None:
+        plan.status = "no-match"
+        plan.warnings.append(
+            f"found a ${tip:.2f} tip charge but no goods charge near "
+            f"${round(order.total,2)-tip:.2f} - not itemizing half an order")
+        return plan
+
+    goods_amt = round(abs(float(goods_charge["amount"])), 2)
+    tip_amt = round(abs(float(tip_charge["amount"])), 2)
+    # Goods items scaled to the ACTUAL goods charge (grocery drift).
+    plan.matched_txn = goods_charge
+    plan.matched_txn_id = goods_charge["transaction_id"]
+    plan.children = _allocate_children(order, _fallback_category(goods_charge),
+                                       target_total=goods_amt)
+    # Tip charge -> spread across the same item categories.
+    plan.tip_txn = tip_charge
+    plan.tip_txn_id = tip_charge["transaction_id"]
+    plan.tip_children = _tip_children(order, tip_amt, plan.children)
+    plan.warnings.extend(order.sanity())
+    plan.warnings.append(
+        f"billed as goods ${goods_amt:.2f} + separate tip ${tip_amt:.2f}; tip "
+        f"spread across item categories")
+    if abs(goods_amt - (round(order.total, 2) - tip)) > _AMOUNT_TOLERANCE:
+        plan.warnings.append(
+            f"grocery drift on goods: estimate ${round(order.total,2)-tip:.2f} -> "
+            f"charged ${goods_amt:.2f}; items scaled to the charge")
+    plan.status = "ready-tip-split"
+    return plan
+
+
+def apply_grocery_tip_split(plan: OrderSplitPlan) -> list[dict]:
+    """Split BOTH the goods charge and the tip charge (one snapshot). Both parents
+    are stamped with the order_no so neither is ever re-matched."""
+    if plan.status != "ready-tip-split" or not plan.matched_txn_id or not plan.tip_txn_id:
+        raise ValueError(f"cannot apply tip-split: status={plan.status}")
+    order = plan.order
+    ts.snapshot()
+    a = ts.split_transaction(plan.matched_txn_id, plan.child_dicts, order_no=order.order_no)
+    b = ts.split_transaction(plan.tip_txn_id, plan.tip_child_dicts, order_no=order.order_no)
+    return [a, b]
 
 
 _APPLICABLE = {"ready", "needs-confirm"}

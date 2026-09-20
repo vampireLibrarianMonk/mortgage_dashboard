@@ -540,3 +540,72 @@ def test_points_purchase_actuals_records_consumption_not_rewards(isolated_store)
     assert lines.get("Household") == 299.99
     assert lines.get("Rewards") == -299.99  # present as a child, but Rewards is
     # not a BUDGET/UNBUDGETED category so it is excluded from the spend aggregation.
+
+
+# --- goods + separate tip charge (grocery delivery) ---------------------------
+
+def _wf_tipped_order_text():
+    """A Whole Foods grocery order, subtotal 29.57 + tax 0.30 + tip 5.00 = 34.87."""
+    return (
+        "Order Summary\nOrder placed August 28, 2026  Order # 113-0000000-0000009\n"
+        "Purchased at Whole Foods Market\n"
+        "Item(s) Subtotal: $29.57Shipping & Handling: $0.00"
+        "Total before tax: $29.57Estimated tax to becollected: $0.30\n"
+        "Driver tip: $5.00Grand Total: $34.87\n"
+        "365 by Whole Foods Market Butter Pecan Ice Cream\n$3.59\n"
+        "Meyenberg Goats Milk\n$25.98\n"
+    )
+
+
+def test_tip_split_pairs_goods_and_tip_charges(isolated_store):
+    # Order billed as goods ($29.87 = subtotal+tax) + a separate $5.00 tip charge.
+    # No single $34.87 charge exists, so plan_split fails; the tip-split pairs both.
+    ts.save_transactions([
+        _row("goods", "Amazon.com*ABC", 29.87, "2026-08-30", authorized_date="2026-08-28"),
+        _row("tip", "Amazon Tips*XYZ", 5.00, "2026-08-30", authorized_date="2026-08-29"),
+    ])
+    od = orders_amazon.AmazonOrderReader().parse_text(_wf_tipped_order_text())
+    assert od.grocery is True and od.tip == 5.00
+
+    assert order_service.plan_split(od).status == "no-match"  # no single-charge match
+
+    plan = order_service.plan_grocery_tip_split(od)
+    assert plan.status == "ready-tip-split"
+    assert plan.matched_txn_id == "goods" and plan.tip_txn_id == "tip"
+    # each parent's children sum to its own charge
+    assert round(sum(c.amount for c in plan.children), 2) == 29.87
+    assert round(sum(c.amount for c in plan.tip_children), 2) == 5.00
+    # tip children reuse the goods item categories (spread like tax), not a lump line
+    goods_cats = {c.category for c in plan.children}
+    assert {c.category for c in plan.tip_children} <= goods_cats
+
+
+def test_tip_split_applies_two_split_parents(isolated_store):
+    ts.save_transactions([
+        _row("goods", "Amazon.com*ABC", 29.87, "2026-08-30", authorized_date="2026-08-28"),
+        _row("tip", "Amazon Tips*XYZ", 5.00, "2026-08-30", authorized_date="2026-08-29"),
+    ])
+    od = orders_amazon.AmazonOrderReader().parse_text(_wf_tipped_order_text())
+    plan = order_service.plan_grocery_tip_split(od)
+    order_service.apply_grocery_tip_split(plan)
+    rows = {t["transaction_id"]: t for t in ts.load_transactions()}
+    assert rows["goods"]["category"] == "Split" and rows["goods"]["split_children"]
+    assert rows["tip"]["category"] == "Split" and rows["tip"]["split_children"]
+    # both stamped with the order_no -> neither re-matched later
+    assert rows["goods"]["split_order_no"] == od.order_no
+    assert rows["tip"]["split_order_no"] == od.order_no
+    assert order_service.plan_grocery_tip_split(od).status == "already-applied"
+
+
+def test_bundled_tip_is_not_tip_split(isolated_store):
+    # When the tip is BUNDLED into one charge (a single $34.87 charge exists),
+    # the normal single-charge path handles it - no separate tip charge, so the
+    # tip-split must NOT fire.
+    ts.save_transactions([
+        _row("one", "Whole Foods", 34.87, "2026-08-30", authorized_date="2026-08-28"),
+    ])
+    od = orders_amazon.AmazonOrderReader().parse_text(_wf_tipped_order_text())
+    # single-charge grocery match succeeds (drift 0), tip already inside the total
+    assert order_service.plan_split(od).status == "ready"
+    # and the tip-split finds no separate "Amazon Tips" charge
+    assert order_service.plan_grocery_tip_split(od).status == "no-match"
