@@ -240,6 +240,11 @@ categorized automatically on later syncs. Use it for anything recurring.
 - `<Category>` must be one of the valid categories (can itself be multiple words,
   e.g. `Home Improvement`).
 - `@mask` (optional) scopes the rule to one account by its last-4 digits.
+- The rule is also applied to **itemized order line items** (the per-item pieces
+  of a split transaction), matched on the item name. So `cat "potty training"
+  Child Care` categorizes that item inside any Amazon/order split too, not just
+  top-level transactions. Only still-uncategorized items are touched, so a
+  category you set by hand on an item is never overwritten.
 
 ```
 $ cat Costco Household
@@ -361,7 +366,11 @@ profile, so the comparison reflects whatever profile is active.
   target × the number of months of data).
 
 It also notes how many transactions are still `Uncategorized`, so an
-"under budget" month isn't mistaken for complete data.
+"under budget" month isn't mistaken for complete data. A month may be tagged
+**`(partial - data from <date>)`** when the bank history only starts mid-month
+(the earlier days are missing), or **`(in progress ...)`** for the current month
+that is still accruing — in both cases the big "under budget" is expected
+(incomplete days), not real underspending.
 
 ```
 $ budget
