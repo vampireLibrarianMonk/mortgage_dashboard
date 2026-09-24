@@ -68,8 +68,9 @@ export default function TimelineRows({
     <fieldset className="tl-timelines">
       <legend>Timelines</legend>
       <p className="section-hint">
-        Each row is a labeled cost on the time axis. Leave the end month blank for
-        an ongoing cost. Escalation is applied every year from the start month.
+        Each row is a labeled cost on the time axis. Set the <strong>end</strong>{" "}
+        month to when the cost stops (e.g. daycare ending Oct 2029) — leave it blank
+        (ongoing) for a cost with no end. Escalation applies every year from the start.
       </p>
 
       {timelines.length === 0 && <p className="tl-empty">No timelines yet.</p>}
@@ -103,10 +104,27 @@ export default function TimelineRows({
               />
             </label>
             <label className="tl-month">
-              end
+              <span className="tl-month-cap">
+                end
+                {row.end ? (
+                  <button
+                    type="button"
+                    className="tl-end-clear"
+                    title="Clear end (make ongoing)"
+                    onClick={() => update(i, { end: null })}
+                  >
+                    ongoing ×
+                  </button>
+                ) : (
+                  <span className="tl-end-ongoing" title="No end date set — this cost runs to the horizon">
+                    ongoing
+                  </span>
+                )}
+              </span>
               <input
                 type="month"
                 value={row.end ?? ""}
+                min={row.start || undefined}
                 onChange={(e) => update(i, { end: e.target.value || null })}
               />
             </label>

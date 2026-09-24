@@ -1019,7 +1019,25 @@ h4 {
 .tl-row input, .tl-row select { padding: 0.25rem 0.35rem; font-size: 0.82rem; }
 .tl-label { flex: 1 1 10rem; min-width: 8rem; }
 .tl-cat { flex: 0 0 auto; }
-.tl-month { display: flex; flex-direction: column; font-size: 0.68rem; color: var(--muted); }
+.tl-month { display: flex; flex-direction: column; font-size: 0.72rem; color: var(--muted); }
+.tl-month-cap { display: flex; align-items: center; gap: 0.3rem; }
+.tl-end-ongoing {
+  font-size: 0.62rem;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  padding: 0 0.25rem;
+}
+.tl-end-clear {
+  font-size: 0.62rem;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0 0.25rem;
+  cursor: pointer;
+  line-height: 1.3;
+}
 .tl-base, .tl-esc { width: 5rem; }
 .tl-esc-label { font-size: 0.72rem; color: var(--muted); }
 .tl-funding-btn { font-size: 0.78rem; }
