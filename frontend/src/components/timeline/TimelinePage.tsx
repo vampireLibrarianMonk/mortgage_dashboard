@@ -53,6 +53,7 @@ export default function TimelinePage({ plan, onChange, result, address, onSave }
   const projection = result?.timeline_projection ?? [];
   const summary = result?.timeline_summary ?? {};
   const firstNeg = summary.first_negative_period ?? null;
+  const negativeWindows = summary.negative_windows ?? [];
   const accountSeries = result?.timeline_accounts ?? [];
 
   // Funding-account balances (persisted snapshots; ⟳ triggers a live refresh).
@@ -168,10 +169,26 @@ export default function TimelinePage({ plan, onChange, result, address, onSave }
           {" "}Projection points: {projection.length}.
         </p>
         {firstNeg ? (
-          <p className="tl-warn">
-            ⚠ leftover goes negative {firstNeg} — add adjustments or reduce timelines
-            (or adjust the budget on the Dashboard to cover it).
-          </p>
+          <div className="tl-warn">
+            <p>
+              ⚠ leftover goes negative — add adjustments or reduce timelines (or
+              adjust the budget on the Dashboard to cover it).
+            </p>
+            <ul className="tl-neg-windows">
+              {negativeWindows.map((w) => (
+                <li key={w.start}>
+                  <span className="tl-neg-span">
+                    {w.start} → {w.end}
+                  </span>
+                  <span className="tl-neg-months">{w.months} mo</span>
+                  <span className="tl-neg-short">{fmt(w.shortfall)} shortfall</span>
+                  <span className="tl-neg-deep">
+                    deepest {fmt(w.deepest)} ({w.deepest_period})
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : projection.length > 0 ? (
           <p className="tl-ok">✔ leftover stays non-negative across the horizon.</p>
         ) : (
@@ -197,7 +214,11 @@ export default function TimelinePage({ plan, onChange, result, address, onSave }
             Solid line is the raw monthly leftover; dashed line adds your
             adjustments. The red line is zero.
           </p>
-          <RunwayChart projection={projection} firstNegative={firstNeg} />
+          <RunwayChart
+            projection={projection}
+            firstNegative={firstNeg}
+            negativeWindows={negativeWindows}
+          />
         </section>
       )}
 

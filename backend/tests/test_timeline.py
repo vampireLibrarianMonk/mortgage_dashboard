@@ -99,6 +99,34 @@ def test_negative_base_bolsters_runway_within_window():
     assert _point(resp, "2028-06")["runway_raw"] == 2000.0        # boost gone
 
 
+def test_negative_windows_group_contiguous_deficits():
+    """Two separate dips (a cost that turns the runway negative, recovers, then a
+    second cost) produce two grouped windows with correct shortfall totals."""
+    tls = [
+        # Dip 1: 2027-01..2027-03, cost 1500 vs 1000 leftover -> -500/mo x3.
+        Timeline(label="dip1", start="2027-01", end="2027-03", base=1500, unit="month"),
+        # Dip 2: 2028-01..2028-02, cost 1200 -> -200/mo x2.
+        Timeline(label="dip2", start="2028-01", end="2028-02", base=1200, unit="month"),
+    ]
+    resp = calculate(_req(tls, starting_leftover=1000, horizon_years=3))
+    windows = resp.timeline_summary["negative_windows"]
+    assert len(windows) == 2
+
+    w1, w2 = windows
+    assert (w1["start"], w1["end"], w1["months"]) == ("2027-01", "2027-03", 3)
+    assert w1["shortfall"] == -1500.0     # 3 x -500
+    assert w1["deepest"] == -500.0
+
+    assert (w2["start"], w2["end"], w2["months"]) == ("2028-01", "2028-02", 2)
+    assert w2["shortfall"] == -400.0      # 2 x -200
+
+
+def test_no_negative_windows_when_solvent():
+    tl = Timeline(label="ok", start="2026-01", end=None, base=100, unit="month")
+    resp = calculate(_req([tl], starting_leftover=3000))
+    assert resp.timeline_summary["negative_windows"] == []
+
+
 def test_negative_base_percent_escalation_grows_the_boost():
     """Percent escalation on a negative base scales its magnitude, so the boost
     gets larger over time."""

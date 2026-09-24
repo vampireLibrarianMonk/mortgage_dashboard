@@ -392,8 +392,48 @@ def _timeline_projection(req: CalculateRequest, monthly_leftover: float,
         "starting_leftover": round(starting_leftover, 2),
         "horizon_years": int(settings.horizon_years),
         "net_adjustment_monthly": round(adj_monthly, 2),
+        "negative_windows": _negative_windows(projection),
     }
     return projection, summary, accounts
+
+
+def _negative_windows(projection: list[dict]) -> list[dict]:
+    """Group the adjusted runway into contiguous negative stretches.
+
+    Returns one entry per run of months where runway_adjusted < 0:
+      start / end         first and last month of the stretch ("YYYY-MM")
+      months              number of months in the stretch
+      shortfall           total deficit (sum of the negative values; <= 0)
+      deepest / deepest_period   the single worst month and when
+      mid_period          the middle month of the stretch (for chart labels)
+    """
+    windows: list[dict] = []
+    run: list[dict] = []
+
+    def flush():
+        if not run:
+            return
+        shortfall = round(sum(p["runway_adjusted"] for p in run), 2)
+        deepest = min(run, key=lambda p: p["runway_adjusted"])
+        mid = run[len(run) // 2]
+        windows.append({
+            "start": run[0]["period"],
+            "end": run[-1]["period"],
+            "months": len(run),
+            "shortfall": shortfall,
+            "deepest": deepest["runway_adjusted"],
+            "deepest_period": deepest["period"],
+            "mid_period": mid["period"],
+        })
+
+    for point in projection:
+        if point["runway_adjusted"] < 0:
+            run.append(point)
+        else:
+            flush()
+            run = []
+    flush()
+    return windows
 
 
 def calculate(req: CalculateRequest) -> CalculateResponse:

@@ -996,7 +996,23 @@ h4 {
 .tl-settings .tl-checkbox { flex-direction: row; align-items: center; gap: 0.4rem; }
 .tl-muted { color: var(--muted); }
 .tl-summary .tl-warn { color: var(--accent); font-weight: 600; }
+.tl-summary .tl-warn p { margin: 0 0 0.4rem; }
 .tl-summary .tl-ok { color: #4caf50; font-weight: 600; }
+.tl-neg-windows { list-style: none; margin: 0; padding: 0; font-weight: 400; }
+.tl-neg-windows li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.25rem 0;
+  border-top: 1px dashed var(--border);
+  font-size: 0.82rem;
+  color: var(--text, #eaeaea);
+}
+.tl-neg-span { font-weight: 600; color: #ff9800; min-width: 11rem; }
+.tl-neg-months { color: var(--muted); }
+.tl-neg-short { color: var(--accent); font-weight: 600; }
+.tl-neg-deep { color: var(--muted); font-size: 0.76rem; }
 
 /* Timeline Builder — rows */
 .timeline-builder fieldset {

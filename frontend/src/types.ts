@@ -182,6 +182,17 @@ export interface TimelineAccountSeries {
   points: { period: string; balance: number }[];
 }
 
+// A contiguous stretch of months where the adjusted runway is negative.
+export interface NegativeWindow {
+  start: string; // "YYYY-MM"
+  end: string; // "YYYY-MM"
+  months: number;
+  shortfall: number; // total deficit over the stretch (<= 0)
+  deepest: number; // worst single month
+  deepest_period: string;
+  mid_period: string; // middle month (for centered chart labels)
+}
+
 export interface CalculateRequest {
   house_purchase: HousePurchase;
   loan_terms: LoanTerms;
@@ -243,6 +254,8 @@ export interface CalculateResponse {
     first_negative_period?: string | null;
     starting_leftover?: number;
     horizon_years?: number;
+    net_adjustment_monthly?: number;
+    negative_windows?: NegativeWindow[];
   };
   timeline_accounts: TimelineAccountSeries[];
 }

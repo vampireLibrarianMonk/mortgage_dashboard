@@ -3,18 +3,27 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import type { TimelineProjectionPoint } from "../../types";
+import type { NegativeWindow, TimelineProjectionPoint } from "../../types";
 
 interface Props {
   projection: TimelineProjectionPoint[];
   firstNegative: string | null;
+  negativeWindows?: NegativeWindow[];
 }
+
+// Compact shortfall label, e.g. -$18.4k
+const fmtShort = (n: number) => {
+  const abs = Math.abs(n);
+  const s = abs >= 1000 ? `$${(abs / 1000).toFixed(1)}k` : `$${abs.toFixed(0)}`;
+  return `-${s}`;
+};
 
 const fmtK = (n: number) => `$${(n / 1000).toFixed(1)}k`;
 const fmtFull = (n: number) =>
@@ -28,7 +37,7 @@ const yearTick = (period: string) => (period.endsWith("-01") ? period.slice(0, 4
  * and adjusted (dashed, after +save/−spend) — with a zero reference line and a
  * marker at the first month the adjusted runway goes negative.
  */
-export default function RunwayChart({ projection, firstNegative }: Props) {
+export default function RunwayChart({ projection, firstNegative, negativeWindows = [] }: Props) {
   if (projection.length === 0) return null;
 
   return (
@@ -50,20 +59,43 @@ export default function RunwayChart({ projection, firstNegative }: Props) {
           />
           <Legend wrapperStyle={{ color: "#eaeaea" }} />
           <ReferenceLine y={0} stroke="#e94560" strokeWidth={1.5} />
-          {firstNegative && (
-            <ReferenceLine
-              x={firstNegative}
-              stroke="#ff9800"
-              strokeDasharray="4 3"
-              label={{
-                value: "goes negative",
-                fill: "#ff9800",
-                fontSize: 10,
-                position: "insideTop",
-                dy: -14,
-              }}
-            />
-          )}
+
+          {/* Shade each negative stretch and label its total shortfall at the
+              midpoint. Falls back to a single "goes negative" marker if the
+              backend didn't provide windows. */}
+          {negativeWindows.length > 0
+            ? negativeWindows.map((w) => (
+                <ReferenceArea
+                  key={w.start}
+                  x1={w.start}
+                  x2={w.end}
+                  fill="#ff9800"
+                  fillOpacity={0.12}
+                  stroke="#ff9800"
+                  strokeOpacity={0.4}
+                  strokeDasharray="4 3"
+                  label={{
+                    value: `${fmtShort(w.shortfall)} over ${w.months} mo`,
+                    fill: "#ff9800",
+                    fontSize: 10,
+                    position: "insideTop",
+                  }}
+                />
+              ))
+            : firstNegative && (
+                <ReferenceLine
+                  x={firstNegative}
+                  stroke="#ff9800"
+                  strokeDasharray="4 3"
+                  label={{
+                    value: "goes negative",
+                    fill: "#ff9800",
+                    fontSize: 10,
+                    position: "insideTop",
+                    dy: -14,
+                  }}
+                />
+              )}
           <Line
             type="monotone"
             dataKey="runway_raw"
