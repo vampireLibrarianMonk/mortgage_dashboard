@@ -34,7 +34,7 @@ export default function RunwayChart({ projection, firstNegative }: Props) {
   return (
     <div className="chart-body">
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart data={projection} margin={{ top: 10, right: 12, left: 10, bottom: 0 }}>
+        <LineChart data={projection} margin={{ top: 28, right: 12, left: 10, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#0f3460" />
           <XAxis
             dataKey="period"
@@ -55,7 +55,13 @@ export default function RunwayChart({ projection, firstNegative }: Props) {
               x={firstNegative}
               stroke="#ff9800"
               strokeDasharray="4 3"
-              label={{ value: "goes negative", fill: "#ff9800", fontSize: 10, position: "top" }}
+              label={{
+                value: "goes negative",
+                fill: "#ff9800",
+                fontSize: 10,
+                position: "insideTop",
+                dy: -14,
+              }}
             />
           )}
           <Line
