@@ -26,6 +26,7 @@ import shlex
 from collections import defaultdict
 from pathlib import Path
 
+import balances_store
 from fastapi import APIRouter, File, UploadFile
 from pydantic import BaseModel
 
@@ -160,6 +161,27 @@ def _cmd_sync(_args) -> list[str]:
                 if offset >= total or not resp["transactions"]:
                     break
             out.append(f"{slug}: fetched {offset}")
+            # Snapshot the latest balance per account (single slot, overwritten;
+            # NOT a history). Feeds the Timeline Builder's funding/account-dip
+            # lines. Best-effort: a balance failure must not fail the sync.
+            try:
+                from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
+                bresp = client.accounts_balance_get(AccountsBalanceGetRequest(access_token=token))
+                now_iso = dt.datetime.now().isoformat(timespec="seconds")
+                n_bal = 0
+                for a in bresp["accounts"]:
+                    cur = a["balances"].get("current")
+                    if cur is None:
+                        continue
+                    balances_store.upsert_balance(
+                        bank=slug, mask=a.get("mask"), balance=float(cur), as_of=now_iso,
+                        account_id=a.get("account_id"), name=a.get("name"),
+                    )
+                    n_bal += 1
+                if n_bal:
+                    out.append(f"{slug}: balances updated ({n_bal})")
+            except Exception as e:  # noqa: BLE001 - balances are best-effort
+                out.append(f"{slug}: balance snapshot skipped: {e}")
         except Exception as e:
             out.append(f"{slug}: sync error: {e}")
 

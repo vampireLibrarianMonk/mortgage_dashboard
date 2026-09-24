@@ -75,6 +75,11 @@ const initialState: CalculateRequest = {
     lump_sums: [],
   },
   classifications: {},
+  timeline_plan: {
+    settings: { starting_leftover: 0, carry_over_leftover: false, horizon_years: 10 },
+    timelines: [],
+    adjustments: [],
+  },
 };
 
 type Action =
@@ -96,7 +101,11 @@ function reducer(state: CalculateRequest, action: Action): CalculateRequest {
     case "SET_SECTION":
       return { ...state, [action.section]: action.value };
     case "LOAD":
-      return action.data;
+      // Backfill timeline_plan for profiles saved before the Timeline feature.
+      return {
+        ...action.data,
+        timeline_plan: action.data.timeline_plan ?? initialState.timeline_plan,
+      };
     case "RESET":
       return initialState;
     default:

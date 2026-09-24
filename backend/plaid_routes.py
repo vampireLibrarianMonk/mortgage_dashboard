@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import re
 
+import balances_store
 from fastapi import APIRouter, HTTPException
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.country_code import CountryCode
@@ -331,3 +332,68 @@ def get_balances(slug: str):
             "available": bal["available"],
         })
     return {"slug": slug, "accounts": accounts}
+
+
+@router.get("/balances-snapshot")
+def get_balances_snapshot():
+    """Return the persisted latest-balance snapshots (single slot per account).
+
+    This is what the Timeline Builder's funding dropdown reads: the most recent
+    balance we saved (on sync or refresh), each stamped with its `as_of`. It does
+    NOT hit Plaid — it's the stored snapshot. Use POST /plaid/balances-refresh to
+    pull fresh figures.
+    """
+    balances = balances_store.load_balances()
+    accounts = [
+        {
+            "key": key,
+            "bank": v.get("bank"),
+            "mask": v.get("mask"),
+            "name": v.get("name", ""),
+            "balance": v.get("balance"),
+            "as_of": v.get("as_of"),
+        }
+        for key, v in sorted(balances.items())
+    ]
+    return {"accounts": accounts}
+
+
+@router.post("/balances-refresh")
+def refresh_balances_snapshot():
+    """Live-pull every linked item's balances and overwrite the stored snapshots.
+
+    Same effect as the balance step of `sync`, on demand — for the Timeline
+    funding UI's refresh button. Best-effort per item; returns the updated
+    snapshot list. Requires Plaid to be configured.
+    """
+    if not credentials_available():
+        raise HTTPException(status_code=400, detail="Plaid not configured.")
+    try:
+        client = build_client()
+    except PlaidConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    import datetime as dt
+
+    updated = 0
+    for it in store.list_items():
+        slug = it["slug"]
+        token = store.get_access_token(slug)
+        if not token:
+            continue
+        try:
+            resp = client.accounts_balance_get(AccountsBalanceGetRequest(access_token=token))
+        except Exception as e:  # noqa: BLE001 - best-effort per item
+            logger.error("balances-refresh failed for '%s': %s", slug, e)
+            continue
+        now_iso = dt.datetime.now().isoformat(timespec="seconds")
+        for a in resp["accounts"]:
+            cur = a["balances"].get("current")
+            if cur is None:
+                continue
+            balances_store.upsert_balance(
+                bank=slug, mask=a.get("mask"), balance=float(cur), as_of=now_iso,
+                account_id=a.get("account_id"), name=a.get("name"),
+            )
+            updated += 1
+    return {"updated": updated, "accounts": get_balances_snapshot()["accounts"]}

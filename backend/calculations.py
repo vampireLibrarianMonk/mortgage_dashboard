@@ -222,6 +222,176 @@ def _generate_amortization_schedule(
     return schedule
 
 
+# --- Timeline Builder projection (see new_spec/timeline_builder.md) -----------
+
+def _ym_to_index(ym: str) -> int:
+    """'YYYY-MM' -> absolute month index (year*12 + (month-1)). Robust to a bare
+    'YYYY' (treated as January)."""
+    parts = str(ym).split("-")
+    year = int(parts[0])
+    month = int(parts[1]) if len(parts) > 1 and parts[1] else 1
+    return year * 12 + (month - 1)
+
+
+def _index_to_ym(idx: int) -> str:
+    return f"{idx // 12:04d}-{(idx % 12) + 1:02d}"
+
+
+def _loan_monthly_payment(principal: float, apr_pct: float, term_months: int) -> float:
+    """Standard amortized monthly payment for a financed purchase."""
+    if term_months <= 0 or principal <= 0:
+        return 0.0
+    r = (apr_pct / 100.0) / 12.0
+    if r == 0:
+        return principal / term_months
+    return principal * r / (1 - (1 + r) ** (-term_months))
+
+
+def _timeline_monthly_cost(tl, month_idx: int) -> tuple[float, float]:
+    """(recurring_cost, one_time) a single timeline contributes at `month_idx`.
+
+    recurring: the escalated per-month cost while active (start..end inclusive),
+    plus any payment-plan monthly within its term. one_time: a full purchase or a
+    down payment landing exactly on the start month.
+    """
+    start = _ym_to_index(tl.start)
+    end = _ym_to_index(tl.end) if tl.end else None
+    if month_idx < start or (end is not None and month_idx > end):
+        # Even outside the recurring span, a payment-plan can run past `end` and a
+        # one-time still only fires at start (handled below). Recurring is 0 here,
+        # but payment-plan months may still apply — fall through for the purchase.
+        recurring_active = False
+    else:
+        recurring_active = True
+
+    recurring = 0.0
+    one_time = 0.0
+
+    # Base recurring cost, normalized to monthly, escalated by whole years elapsed.
+    if recurring_active and tl.base:
+        years_elapsed = (month_idx - start) // 12
+        base = float(tl.base)
+        if tl.escalation_value:
+            if str(getattr(tl.escalation_unit, "value", tl.escalation_unit)) == "percent":
+                base *= (1 + float(tl.escalation_value) / 100.0) ** years_elapsed
+            else:  # dollar
+                base += float(tl.escalation_value) * years_elapsed
+        recurring += base / 12.0 if str(getattr(tl.unit, "value", tl.unit)) == "year" else base
+
+    # Purchase funding.
+    p = tl.purchase
+    if p is not None:
+        method = str(getattr(p.method, "value", p.method))
+        if method == "pay_in_full":
+            if month_idx == start:
+                one_time += float(p.amount)
+        elif method == "payment_plan":
+            if month_idx == start and p.down_payment:
+                one_time += float(p.down_payment)
+            financed = max(0.0, float(p.amount) - float(p.down_payment))
+            mp = _loan_monthly_payment(financed, float(p.apr), int(p.term_months))
+            if mp and start <= month_idx < start + int(p.term_months):
+                recurring += mp
+        # already_paid: contributes nothing.
+
+    return round(recurring, 2), round(one_time, 2)
+
+
+def _adjustment_monthly(plan) -> float:
+    """Net of all adjustments normalized to monthly (+ = money freed / saved)."""
+    total = 0.0
+    for a in plan.adjustments:
+        amt = float(a.amount)
+        total += amt / 12.0 if str(getattr(a.unit, "value", a.unit)) == "year" else amt
+    return total
+
+
+def _timeline_projection(req: CalculateRequest, monthly_leftover: float,
+                         balances: dict | None = None) -> tuple[list[dict], dict, list[dict]]:
+    """Build the runway projection from req.timeline_plan.
+
+    Returns (projection_points, summary, accounts). Monthly resolution over the
+    horizon starting at the loan's start month. `balances` maps an account key
+    ("<bank>:<mask>" or "other") to {"balance","as_of"} for the account-dip lines;
+    when absent, account lines start at 0 (still show the draw-downs).
+    """
+    plan = req.timeline_plan
+    if not plan or (not plan.timelines and not plan.adjustments):
+        return [], {}, []
+
+    settings = plan.settings
+    start_idx = req.loan_terms.start_year * 12 + (req.loan_terms.start_month - 1)
+    horizon_months = int(settings.horizon_years) * 12
+
+    starting_leftover = (round(monthly_leftover, 2) if settings.carry_over_leftover
+                         else float(settings.starting_leftover))
+    adj_monthly = _adjustment_monthly(plan)
+
+    # Account draw-downs: per funded account, the one-time draws by month index.
+    balances = balances or {}
+    acct_draws: dict[str, dict] = {}   # key -> {month_idx: draw_amount}
+    for tl in plan.timelines:
+        p = tl.purchase
+        if p is None or p.account is None:
+            continue
+        method = str(getattr(p.method, "value", p.method))
+        s = _ym_to_index(tl.start)
+        draw = 0.0
+        if method == "pay_in_full":
+            draw = float(p.amount)
+        elif method == "payment_plan":
+            draw = float(p.down_payment)
+        if draw > 0:
+            acct_draws.setdefault(p.account, {}).setdefault(s, 0.0)
+            acct_draws[p.account][s] += draw
+
+    projection: list[dict] = []
+    first_negative = None
+    for m in range(horizon_months + 1):
+        idx = start_idx + m
+        cost = 0.0
+        one_time = 0.0
+        for tl in plan.timelines:
+            rec, ot = _timeline_monthly_cost(tl, idx)
+            cost += rec
+            one_time += ot
+        runway_raw = round(starting_leftover - cost - one_time, 2)
+        runway_adjusted = round(runway_raw + adj_monthly, 2)
+        if first_negative is None and runway_adjusted < 0:
+            first_negative = _index_to_ym(idx)
+        projection.append({
+            "period": _index_to_ym(idx),
+            "year": idx // 12,
+            "timeline_cost": round(cost, 2),
+            "adjustment": round(adj_monthly, 2),
+            "one_time": round(one_time, 2),
+            "runway_raw": runway_raw,
+            "runway_adjusted": runway_adjusted,
+        })
+
+    # Account-dip series: start at latest snapshot balance (or 0), step down on draws.
+    accounts: list[dict] = []
+    for key, draws in acct_draws.items():
+        snap = balances.get(key) or {}
+        bal = float(snap.get("balance", 0.0) or 0.0)
+        as_of = snap.get("as_of")
+        pts = []
+        for m in range(horizon_months + 1):
+            idx = start_idx + m
+            if idx in draws:
+                bal -= draws[idx]
+            pts.append({"period": _index_to_ym(idx), "balance": round(bal, 2)})
+        accounts.append({"key": key, "label": key, "as_of": as_of, "points": pts})
+
+    summary = {
+        "first_negative_period": first_negative,
+        "starting_leftover": round(starting_leftover, 2),
+        "horizon_years": int(settings.horizon_years),
+        "net_adjustment_monthly": round(adj_monthly, 2),
+    }
+    return projection, summary, accounts
+
+
 def calculate(req: CalculateRequest) -> CalculateResponse:
     hp = req.house_purchase
     lt = req.loan_terms
@@ -504,4 +674,22 @@ def calculate(req: CalculateRequest) -> CalculateResponse:
         amortization_schedule=_generate_amortization_schedule(
             loan_amount, monthly_rate, num_payments, required_monthly, req, lt.start_month, lt.start_year
         ),
+        **_timeline_response_fields(req, monthly_leftover),
     )
+
+
+def _timeline_response_fields(req: CalculateRequest, monthly_leftover: float) -> dict:
+    """Compute the Timeline Builder projection and package it as the response
+    fields. Balances (for account-dip lines) are looked up from the balance
+    snapshot store when available; absent snapshots just start those lines at 0."""
+    try:
+        import balances_store
+        balances = balances_store.load_balances()
+    except Exception:
+        balances = {}
+    projection, summary, accounts = _timeline_projection(req, monthly_leftover, balances)
+    return {
+        "timeline_projection": projection,
+        "timeline_summary": summary,
+        "timeline_accounts": accounts,
+    }

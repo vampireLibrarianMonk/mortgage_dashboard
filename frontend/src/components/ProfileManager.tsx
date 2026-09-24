@@ -75,6 +75,11 @@ const defaults: CalculateRequest = {
     lump_sums: [],
   },
   classifications: {},
+  timeline_plan: {
+    settings: { starting_leftover: 0, carry_over_leftover: false, horizon_years: 10 },
+    timelines: [],
+    adjustments: [],
+  },
 };
 
 /**

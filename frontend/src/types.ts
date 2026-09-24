@@ -120,6 +120,68 @@ export interface ExtraPrincipal {
   lump_sums: LumpSumPayment[];
 }
 
+// --- Timeline Builder (see new_spec/timeline_builder.md) ---
+
+export type AmountUnit = "month" | "year";
+export type EscalationUnit = "percent" | "dollar";
+export type PurchaseMethod = "pay_in_full" | "payment_plan" | "already_paid";
+
+export interface Purchase {
+  amount: number;
+  method: PurchaseMethod;
+  down_payment: number;
+  apr: number;
+  term_months: number;
+  account: string | null; // "<bank>:<mask>" or "other"
+}
+
+export interface Timeline {
+  label: string;
+  category: string; // budget category or "Generic"
+  start: string; // "YYYY-MM"
+  end: string | null; // null = ongoing
+  base: number;
+  unit: AmountUnit;
+  escalation_value: number;
+  escalation_unit: EscalationUnit;
+  purchase: Purchase | null;
+}
+
+export interface Adjustment {
+  label: string;
+  amount: number; // + = saved/freed, - = new expense
+  unit: AmountUnit;
+}
+
+export interface TimelineSettings {
+  starting_leftover: number;
+  carry_over_leftover: boolean;
+  horizon_years: number;
+}
+
+export interface TimelinePlan {
+  settings: TimelineSettings;
+  timelines: Timeline[];
+  adjustments: Adjustment[];
+}
+
+export interface TimelineProjectionPoint {
+  period: string; // "YYYY-MM"
+  year: number;
+  timeline_cost: number;
+  adjustment: number;
+  runway_raw: number;
+  runway_adjusted: number;
+  one_time: number;
+}
+
+export interface TimelineAccountSeries {
+  key: string;
+  label: string;
+  as_of: string | null;
+  points: { period: string; balance: number }[];
+}
+
 export interface CalculateRequest {
   house_purchase: HousePurchase;
   loan_terms: LoanTerms;
@@ -136,6 +198,7 @@ export interface CalculateRequest {
   // Per-line M/D overrides for fixed-field sections, keyed by canonical line
   // key (e.g. "vehicle.car_insurance_monthly"). Missing keys use backend defaults.
   classifications: Record<string, Classification>;
+  timeline_plan: TimelinePlan;
 }
 
 export interface CalculateResponse {
@@ -175,6 +238,13 @@ export interface CalculateResponse {
   scheduled_extra_principal_monthly: number;
   lump_sum_total: number;
   amortization_schedule: AmortizationPoint[];
+  timeline_projection: TimelineProjectionPoint[];
+  timeline_summary: {
+    first_negative_period?: string | null;
+    starting_leftover?: number;
+    horizon_years?: number;
+  };
+  timeline_accounts: TimelineAccountSeries[];
 }
 
 export interface AmortizationPoint {

@@ -136,6 +136,69 @@ class ExtraPrincipal(BaseModel):
     lump_sums: list[LumpSumPayment] = []
 
 
+# --- Timeline Builder (see new_spec/timeline_builder.md) ----------------------
+# A generic, forward-looking planner. Timelines are labeled recurring costs (some
+# of which are purchases with a funding method); adjustments are flat offsets that
+# apply across the whole horizon (+ = money saved/freed, - = new expense). The
+# projection is a monthly-leftover "runway" over `horizon_years`. It is decoupled
+# from the live budget except for the single opt-in starting-leftover number.
+
+class AmountUnit(str, Enum):
+    month = "month"
+    year = "year"
+
+
+class EscalationUnit(str, Enum):
+    percent = "percent"  # base *= (1 + value/100) each start-anniversary year
+    dollar = "dollar"    # base += value each start-anniversary year
+
+
+class PurchaseMethod(str, Enum):
+    pay_in_full = "pay_in_full"      # full amount draws the account on start
+    payment_plan = "payment_plan"    # down draws account; financed -> monthly for term
+    already_paid = "already_paid"    # excluded from the projection (recorded only)
+
+
+class Purchase(BaseModel):
+    amount: float = Field(ge=0, default=0)
+    method: PurchaseMethod = PurchaseMethod.pay_in_full
+    down_payment: float = Field(ge=0, default=0)     # payment_plan only
+    apr: float = Field(ge=0, default=0)              # annual %, financed remainder
+    term_months: int = Field(ge=0, default=0)        # payment_plan only
+    account: str | None = None                       # earmark: "<bank>:<mask>" or "other"
+
+
+class Timeline(BaseModel):
+    label: str = ""
+    category: str = "Generic"          # a budget category name or "Generic"
+    start: str                         # "YYYY-MM"
+    end: str | None = None             # "YYYY-MM"; None = ongoing (to horizon)
+    base: float = Field(ge=0, default=0)  # recurring amount at `unit` cadence
+    unit: AmountUnit = AmountUnit.month
+    escalation_value: float = Field(ge=0, default=0)  # per-year increase; 0 = flat
+    escalation_unit: EscalationUnit = EscalationUnit.percent
+    purchase: Purchase | None = None   # present when this timeline is a purchase
+
+
+class Adjustment(BaseModel):
+    label: str = ""
+    amount: float = 0                  # + = saved/freed, - = new expense
+    unit: AmountUnit = AmountUnit.month
+
+
+class TimelineSettings(BaseModel):
+    starting_leftover: float = 0       # runway start line
+    carry_over_leftover: bool = False  # if true, filled from Dashboard monthly_leftover
+    horizon_years: int = Field(ge=1, le=50, default=10)
+
+
+class TimelinePlan(BaseModel):
+    """The whole Timeline Builder state (persists on the profile)."""
+    settings: TimelineSettings = TimelineSettings()
+    timelines: list[Timeline] = []
+    adjustments: list[Adjustment] = []
+
+
 class CalculateRequest(BaseModel):
     house_purchase: HousePurchase
     loan_terms: LoanTerms
@@ -154,6 +217,8 @@ class CalculateRequest(BaseModel):
     # are "M" or "D". Missing keys fall back to the built-in defaults in
     # calculations.py. List rows carry their own classification field instead.
     classifications: dict[str, str] = {}
+    # Timeline Builder state (optional; drives the forward-looking runway projection).
+    timeline_plan: TimelinePlan = TimelinePlan()
 
 
 class CalculateResponse(BaseModel):
@@ -212,3 +277,12 @@ class CalculateResponse(BaseModel):
 
     # Amortization schedule (for chart)
     amortization_schedule: list[dict] = []
+
+    # Timeline Builder projection (for the Timeline tab). Same delivery convention
+    # as amortization_schedule: a list of per-period points the frontend charts.
+    # Each point: {period "YYYY-MM", year, timeline_cost, adjustment, runway_raw,
+    # runway_adjusted, one_time}. Plus a small summary the UI reads for warnings.
+    timeline_projection: list[dict] = []
+    timeline_summary: dict = {}
+    # Per funded account: {"key","label","points":[{period,balance}], "as_of"}.
+    timeline_accounts: list[dict] = []
