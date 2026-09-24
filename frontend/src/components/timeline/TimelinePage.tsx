@@ -177,10 +177,18 @@ export default function TimelinePage({ plan, onChange, result, address, onSave }
             <ul className="tl-neg-windows">
               {negativeWindows.map((w) => (
                 <li key={w.start}>
-                  <span className="tl-neg-span">
-                    {w.start} → {w.end}
+                  <span
+                    className="tl-neg-span"
+                    title={`Negative every month from ${w.start} through ${w.end}, both endpoints included`}
+                  >
+                    {w.start} – {w.end} (incl.)
                   </span>
-                  <span className="tl-neg-months">{w.months} mo</span>
+                  <span
+                    className="tl-neg-months"
+                    title="Count of negative months, inclusive of the first and last month"
+                  >
+                    {w.months} mo (incl.)
+                  </span>
                   <span className="tl-neg-short">{fmt(w.shortfall)} shortfall</span>
                   <span className="tl-neg-deep">
                     deepest {fmt(w.deepest)} ({w.deepest_period})
