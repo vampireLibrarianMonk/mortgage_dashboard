@@ -32,20 +32,17 @@ export default function TimelinePage({ plan, onChange, result, address, onSave }
   const setSettings = (patch: Partial<typeof settings>) =>
     onChange({ ...plan, settings: { ...settings, ...patch } });
 
-  // Save-to-profile control. Uses the Dashboard's current address if set;
-  // otherwise the user types one here. Status gives quick save feedback.
-  const [addressDraft, setAddressDraft] = useState(address);
+  // Save-to-profile control. The profile address is chosen only on the Dashboard;
+  // here we simply save to whatever address is currently selected there. No inline
+  // address entry — the Dashboard is the single point of edit for the selection.
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  useEffect(() => {
-    setAddressDraft(address);
-  }, [address]);
+  const savedAddress = address.trim();
 
   const handleSave = async () => {
-    const addr = addressDraft.trim();
-    if (!addr) return;
+    if (!savedAddress) return;
     setSaveStatus("saving");
     try {
-      await onSave(addr);
+      await onSave(savedAddress);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2500);
     } catch {
@@ -92,17 +89,18 @@ export default function TimelinePage({ plan, onChange, result, address, onSave }
         <div className="tl-head-top">
           <h2>Timeline Builder</h2>
           <div className="tl-save">
-            <input
-              type="text"
-              placeholder="Street address"
-              className="tl-save-address"
-              value={addressDraft}
-              onChange={(e) => setAddressDraft(e.target.value)}
-            />
+            {savedAddress ? (
+              <span className="tl-save-target" title="Profile is selected on the Dashboard">
+                {savedAddress}
+              </span>
+            ) : (
+              <span className="tl-save-none">No profile selected — choose one on the Dashboard</span>
+            )}
             <button
               type="button"
               onClick={handleSave}
-              disabled={!addressDraft.trim() || saveStatus === "saving"}
+              disabled={!savedAddress || saveStatus === "saving"}
+              title={savedAddress ? `Save to "${savedAddress}"` : "Select a profile on the Dashboard first"}
             >
               {saveStatus === "saving" ? "Saving…" : "Save to profile"}
             </button>

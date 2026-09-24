@@ -1141,7 +1141,8 @@ h4 {
   justify-content: space-between;
   gap: 0.75rem;
 }
-.tl-save { display: flex; align-items: center; gap: 0.4rem; }
-.tl-save-address { padding: 0.3rem 0.45rem; min-width: 12rem; }
+.tl-save { display: flex; align-items: center; gap: 0.5rem; }
+.tl-save-target { font-size: 0.85rem; font-weight: 600; }
+.tl-save-none { font-size: 0.78rem; color: var(--muted); font-style: italic; }
 .tl-save-ok { color: #4caf50; font-size: 0.8rem; }
 .tl-save-err { color: var(--accent); font-size: 0.8rem; }
