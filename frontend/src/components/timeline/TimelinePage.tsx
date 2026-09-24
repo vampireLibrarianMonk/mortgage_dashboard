@@ -181,13 +181,13 @@ export default function TimelinePage({ plan, onChange, result, address, onSave }
                     className="tl-neg-span"
                     title={`Negative every month from ${w.start} through ${w.end}, both endpoints included`}
                   >
-                    {w.start} – {w.end} (incl.)
+                    {w.start} (incl.) – {w.end} (incl.)
                   </span>
                   <span
                     className="tl-neg-months"
                     title="Count of negative months, inclusive of the first and last month"
                   >
-                    {w.months} mo (incl.)
+                    {w.months} mo
                   </span>
                   <span className="tl-neg-short">{fmt(w.shortfall)} shortfall</span>
                   <span className="tl-neg-deep">
