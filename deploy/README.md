@@ -119,11 +119,16 @@ powershell -ExecutionPolicy Bypass -File deploy\update-hosts.ps1 -Remove       #
   `powershell -ExecutionPolicy Bypass -File deploy\start-apps.ps1`.
 - **`http://app.mortgage-dashboard/` is down / nothing is listening**: first check
   whether the boot tasks are even registered —
-  `Get-ScheduledTask -TaskName MortgageDashboard-*`.
-  - **No tasks returned** → the one-time setup (step 4) was never run, so nothing
-    starts the app on boot. Run it once, elevated: `deploy\register-startup.ps1`,
-    then `Start-ScheduledTask -TaskName MortgageDashboard-Apps` and
-    `-Proxy`. This is the durable fix — it survives every restart.
+  `Get-ScheduledTask -TaskName MortgageDashboard-*`. **Run this check from an
+  elevated (Administrator) prompt** — a non-admin shell can return *nothing* even
+  when the tasks exist (the tasks run as SYSTEM and may not be visible to a
+  standard session), so an empty result in a normal shell is not proof they're
+  missing; confirm elevated before concluding they need to be registered.
+  - **No tasks returned (confirmed in an elevated shell)** → the one-time setup
+    (step 4) was never run, so nothing starts the app on boot. Run it once,
+    elevated: `deploy\register-startup.ps1`, then `Start-ScheduledTask -TaskName
+    MortgageDashboard-Apps` and `-Proxy`. This is the durable fix — it survives
+    every restart.
   - **Tasks exist but nothing is listening** (`Get-NetTCPConnection -LocalPort 80,9001
     -State Listen` is empty) → start them: `Start-ScheduledTask -TaskName
     MortgageDashboard-Apps` / `-Proxy` (admin), or just reboot.
