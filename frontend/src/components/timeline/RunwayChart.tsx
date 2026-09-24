@@ -75,7 +75,7 @@ export default function RunwayChart({ projection, firstNegative, negativeWindows
                   strokeOpacity={0.4}
                   strokeDasharray="4 3"
                   label={{
-                    value: `${fmtShort(w.shortfall)} over ${w.months} mo (incl.)`,
+                    value: `${fmtShort(w.shortfall)} over ${w.months} mo`,
                     fill: "#ff9800",
                     fontSize: 10,
                     position: "insideTop",
