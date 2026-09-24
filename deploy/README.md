@@ -25,6 +25,12 @@ Browser  ──►  http://app.mortgage-dashboard/          (no port needed)
 - **Task Scheduler** starts the apps and Caddy at boot, before login, running as SYSTEM
   (which is what lets Caddy bind port 80).
 
+> **Boot vs. resume.** The tasks trigger *At startup*, so a full **restart** brings
+> everything back automatically. **Resume from sleep** is a different event that the
+> At-startup trigger does *not* re-fire on — but that is normally fine because the
+> processes keep running through sleep. You only need to re-launch after a resume if
+> something killed them (see the "site is down" troubleshooting entry below).
+
 Ports are reserved in the **9000s** band to avoid clashing with common dev servers
 (3000/5173/8000/8080) and the Windows ephemeral range (49152+). The mortgage app is
 `9001`; give each new app the next free port (`9002`, `9003`, …).
@@ -111,6 +117,20 @@ powershell -ExecutionPolicy Bypass -File deploy\update-hosts.ps1 -Remove       #
 - **App unhealthy at boot**: check Task Scheduler history for `MortgageDashboard-Apps`,
   and confirm `backend\venv` exists. Test the launcher manually:
   `powershell -ExecutionPolicy Bypass -File deploy\start-apps.ps1`.
+- **`http://app.mortgage-dashboard/` is down / nothing is listening**: first check
+  whether the boot tasks are even registered —
+  `Get-ScheduledTask -TaskName MortgageDashboard-*`.
+  - **No tasks returned** → the one-time setup (step 4) was never run, so nothing
+    starts the app on boot. Run it once, elevated: `deploy\register-startup.ps1`,
+    then `Start-ScheduledTask -TaskName MortgageDashboard-Apps` and
+    `-Proxy`. This is the durable fix — it survives every restart.
+  - **Tasks exist but nothing is listening** (`Get-NetTCPConnection -LocalPort 80,9001
+    -State Listen` is empty) → start them: `Start-ScheduledTask -TaskName
+    MortgageDashboard-Apps` / `-Proxy` (admin), or just reboot.
+  - **Stopgap (no admin handy):** `deploy\start-apps.ps1` launches the backend on
+    9001 without elevation; Caddy on :80 usually needs an elevated shell. A stopgap
+    launch is session-scoped and will NOT survive a restart — register the tasks for
+    a permanent fix.
 
 ## Files
 
