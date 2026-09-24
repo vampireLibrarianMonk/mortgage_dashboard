@@ -248,11 +248,13 @@ def _loan_monthly_payment(principal: float, apr_pct: float, term_months: int) ->
 
 
 def _timeline_monthly_cost(tl, month_idx: int) -> tuple[float, float]:
-    """(recurring_cost, one_time) a single timeline contributes at `month_idx`.
+    """(recurring, one_time) a single timeline contributes at `month_idx`.
 
-    recurring: the escalated per-month cost while active (start..end inclusive),
-    plus any payment-plan monthly within its term. one_time: a full purchase or a
-    down payment landing exactly on the start month.
+    `recurring` is SIGNED: a positive base is a cost, a negative base is
+    income/savings that bolsters the runway (runway_raw subtracts recurring, so a
+    negative recurring adds back). It is the escalated per-month amount while
+    active (start..end inclusive), plus any payment-plan monthly within its term.
+    `one_time` is a full purchase or a down payment landing on the start month.
     """
     start = _ym_to_index(tl.start)
     end = _ym_to_index(tl.end) if tl.end else None
@@ -267,7 +269,9 @@ def _timeline_monthly_cost(tl, month_idx: int) -> tuple[float, float]:
     recurring = 0.0
     one_time = 0.0
 
-    # Base recurring cost, normalized to monthly, escalated by whole years elapsed.
+    # Base recurring amount (signed), normalized to monthly, escalated by whole
+    # years elapsed. Percent escalation scales magnitude in place, so a negative
+    # base grows more negative (a bigger boost) as expected.
     if recurring_active and tl.base:
         years_elapsed = (month_idx - start) // 12
         base = float(tl.base)

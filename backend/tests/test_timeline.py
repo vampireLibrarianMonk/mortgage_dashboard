@@ -8,9 +8,9 @@ Isolation: isolated_store (conftest) covers txn_store; we redirect
 balances_store.BALANCES_PATH to tmp so seeding a balance is disposable.
 """
 
-import balances_store as bs
 import pytest
 
+import balances_store as bs
 from calculations import calculate
 from models import (
     Adjustment,
@@ -84,6 +84,29 @@ def test_year_unit_normalizes_to_monthly():
     tl = Timeline(label="annual", start="2026-01", end=None, base=1200, unit="year")
     resp = calculate(_req([tl]))
     assert _point(resp, "2026-06")["timeline_cost"] == 100.0     # 1200/yr -> 100/mo
+
+
+def test_negative_base_bolsters_runway_within_window():
+    """A negative base is income/savings: it ADDS to the runway while active, and
+    that boost stops at the end month (runway steps back down)."""
+    tl = Timeline(label="side income", start="2027-01", end="2027-12",
+                  base=-300, unit="month")
+    resp = calculate(_req([tl], starting_leftover=2000))
+    assert _point(resp, "2026-06")["timeline_cost"] == 0.0        # before start
+    assert _point(resp, "2027-06")["timeline_cost"] == -300.0     # active (signed)
+    assert _point(resp, "2027-06")["runway_raw"] == 2300.0        # 2000 - (-300)
+    assert _point(resp, "2028-06")["timeline_cost"] == 0.0        # after end
+    assert _point(resp, "2028-06")["runway_raw"] == 2000.0        # boost gone
+
+
+def test_negative_base_percent_escalation_grows_the_boost():
+    """Percent escalation on a negative base scales its magnitude, so the boost
+    gets larger over time."""
+    tl = Timeline(label="raise", start="2026-01", end=None, base=-1000, unit="month",
+                  escalation_value=10, escalation_unit="percent")
+    resp = calculate(_req([tl], horizon_years=3))
+    assert _point(resp, "2026-06")["timeline_cost"] == -1000.0
+    assert _point(resp, "2027-06")["timeline_cost"] == -1100.0    # bigger boost
 
 
 # --- escalation ----------------------------------------------------------------

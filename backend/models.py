@@ -173,7 +173,10 @@ class Timeline(BaseModel):
     category: str = "Generic"          # a budget category name or "Generic"
     start: str                         # "YYYY-MM"
     end: str | None = None             # "YYYY-MM"; None = ongoing (to horizon)
-    base: float = Field(ge=0, default=0)  # recurring amount at `unit` cadence
+    # Signed recurring amount at `unit` cadence. Positive = a cost (reduces the
+    # runway); negative = income/savings (bolsters the runway). Applied only
+    # within [start, end], so a negative base is a time-boxed budget boost.
+    base: float = Field(default=0)
     unit: AmountUnit = AmountUnit.month
     escalation_value: float = Field(ge=0, default=0)  # per-year increase; 0 = flat
     escalation_unit: EscalationUnit = EscalationUnit.percent

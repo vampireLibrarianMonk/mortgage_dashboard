@@ -68,9 +68,11 @@ export default function TimelineRows({
     <fieldset className="tl-timelines">
       <legend>Timelines</legend>
       <p className="section-hint">
-        Each row is a labeled cost on the time axis. Set the <strong>end</strong>{" "}
-        month to when the cost stops (e.g. daycare ending Oct 2029) — leave it blank
-        (ongoing) for a cost with no end. Escalation applies every year from the start.
+        Each row is a labeled amount on the time axis. A <strong>positive</strong>{" "}
+        base is a cost (lowers your runway); a <strong>negative</strong> base is
+        income/savings that bolsters it. Set the <strong>end</strong> month to when
+        it stops (e.g. daycare ending Oct 2029) — leave it blank (ongoing) for no end.
+        Escalation applies every year from the start.
       </p>
 
       {timelines.length === 0 && <p className="tl-empty">No timelines yet.</p>}
@@ -133,8 +135,15 @@ export default function TimelineRows({
               type="number"
               placeholder="Base"
               value={row.base}
+              title="Positive = a cost (lowers runway). Negative = income/savings (bolsters runway)."
               onChange={(e) => update(i, { base: Number(e.target.value) })}
             />
+            <span
+              className={row.base < 0 ? "tl-sign tl-save" : "tl-sign tl-spend"}
+              title="Positive = cost, negative = income/savings"
+            >
+              {row.base < 0 ? "income" : "cost"}
+            </span>
             <select
               className="tl-unit"
               value={row.unit}
