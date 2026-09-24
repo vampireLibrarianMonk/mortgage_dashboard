@@ -17,7 +17,8 @@ import BankManager from "./components/BankManager";
 import ResultsPanel from "./components/results/ResultsPanel";
 import PrintReport from "./components/results/PrintReport";
 import ProfileManager from "./components/ProfileManager";
-import type { CalculateRequest, Classification } from "./types";
+import TimelinePage from "./components/timeline/TimelinePage";
+import type { CalculateRequest, Classification, TimelinePlan } from "./types";
 import "./App.css";
 
 /** Props produced for a fixed-field line's inline M/D toggle. */
@@ -31,7 +32,7 @@ export type MakeMD = (key: string, defaultClass: Classification) => MDProps;
 function App() {
   const { state, dispatch, result, loading, error } = useCalculation();
   const [profileAddress, setProfileAddress] = useState("");
-  const [page, setPage] = useState<"dashboard" | "console" | "banks">("dashboard");
+  const [page, setPage] = useState<"dashboard" | "console" | "banks" | "timeline">("dashboard");
 
   const setField = (section: keyof CalculateRequest) => (field: string, value: unknown) => {
     dispatch({ type: "SET_FIELD", section, field, value });
@@ -96,6 +97,13 @@ function App() {
           >
             Banks
           </button>
+          <button
+            type="button"
+            className={page === "timeline" ? "page-tab active" : "page-tab"}
+            onClick={() => setPage("timeline")}
+          >
+            Timeline
+          </button>
         </nav>
         {page === "dashboard" && result && (
           <button type="button" className="print-btn" onClick={handlePrint}>
@@ -111,6 +119,14 @@ function App() {
       ) : page === "banks" ? (
         <main className="banks-page">
           <BankManager />
+        </main>
+      ) : page === "timeline" ? (
+        <main className="timeline-page">
+          <TimelinePage
+            plan={state.timeline_plan}
+            onChange={(value: TimelinePlan) => setSection("timeline_plan")(value)}
+            result={result}
+          />
         </main>
       ) : (
         <>

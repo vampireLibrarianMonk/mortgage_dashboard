@@ -250,3 +250,31 @@ export async function exchangePublicToken(publicToken: string, name: string): Pr
   if (!res.ok) throw new Error(`exchange failed: ${res.status}`);
   return res.json();
 }
+
+// --- Balance snapshots (Timeline Builder funding dropdown) ---
+
+export interface BalanceSnapshotAccount {
+  key: string; // "<bank>:<mask>"
+  bank: string | null;
+  mask: string | null;
+  name: string;
+  balance: number | null;
+  as_of: string | null;
+}
+
+// Read the persisted latest-balance snapshots (no Plaid hit).
+export async function balancesSnapshot(): Promise<BalanceSnapshotAccount[]> {
+  const res = await fetch(`${API_BASE}/plaid/balances-snapshot`);
+  if (!res.ok) throw new Error(`balances-snapshot failed: ${res.status}`);
+  const data = await res.json();
+  return (data.accounts ?? []) as BalanceSnapshotAccount[];
+}
+
+// Live-pull every linked item's balances, overwrite the stored snapshots,
+// and return the refreshed list.
+export async function balancesRefresh(): Promise<BalanceSnapshotAccount[]> {
+  const res = await fetch(`${API_BASE}/plaid/balances-refresh`, { method: "POST" });
+  if (!res.ok) throw new Error(`balances-refresh failed: ${res.status}`);
+  const data = await res.json();
+  return (data.accounts ?? []) as BalanceSnapshotAccount[];
+}

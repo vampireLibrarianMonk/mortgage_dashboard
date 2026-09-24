@@ -977,3 +977,140 @@ h4 {
   color: #7fd18a;
   font-size: 0.88rem;
 }
+
+/* Timeline Builder */
+.timeline-page { padding: 1rem 1.5rem; }
+.timeline-builder .tl-head h2 { margin: 0 0 0.25rem; }
+.tl-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  align-items: flex-end;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.tl-settings label { display: flex; flex-direction: column; font-size: 0.82rem; gap: 0.25rem; }
+.tl-settings input[type="number"] { width: 9rem; padding: 0.3rem 0.4rem; }
+.tl-settings .tl-checkbox { flex-direction: row; align-items: center; gap: 0.4rem; }
+.tl-muted { color: var(--muted); }
+.tl-summary .tl-warn { color: var(--accent); font-weight: 600; }
+.tl-summary .tl-ok { color: #4caf50; font-weight: 600; }
+
+/* Timeline Builder — rows */
+.timeline-builder fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+}
+.timeline-builder legend { font-weight: 600; padding: 0 0.4rem; }
+.tl-empty { color: var(--muted); font-style: italic; }
+
+.tl-row-wrap { border-bottom: 1px dashed var(--border); padding: 0.4rem 0; }
+.tl-row-wrap:last-of-type { border-bottom: none; }
+.tl-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.tl-row input, .tl-row select { padding: 0.25rem 0.35rem; font-size: 0.82rem; }
+.tl-label { flex: 1 1 10rem; min-width: 8rem; }
+.tl-cat { flex: 0 0 auto; }
+.tl-month { display: flex; flex-direction: column; font-size: 0.68rem; color: var(--muted); }
+.tl-base, .tl-esc { width: 5rem; }
+.tl-esc-label { font-size: 0.72rem; color: var(--muted); }
+.tl-funding-btn { font-size: 0.78rem; }
+.tl-funding-btn.active { border-color: var(--accent); color: var(--accent); }
+.tl-remove {
+  border: none; background: transparent; color: var(--accent);
+  font-size: 1.1rem; cursor: pointer; line-height: 1;
+}
+.tl-add {
+  margin-top: 0.5rem; font-size: 0.82rem; padding: 0.3rem 0.6rem; cursor: pointer;
+}
+
+/* Funding panel */
+.tl-funding-panel {
+  margin: 0.4rem 0 0.2rem;
+  padding: 0.6rem 0.8rem;
+  background: var(--panel, rgba(127, 127, 127, 0.08));
+  border-radius: 6px;
+}
+.tl-funding-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.tl-funding-clear {
+  border: none; background: transparent; color: var(--accent);
+  font-size: 0.75rem; cursor: pointer;
+}
+.tl-funding-grid { display: flex; flex-wrap: wrap; gap: 0.9rem; align-items: flex-end; }
+.tl-funding-grid label { display: flex; flex-direction: column; font-size: 0.78rem; gap: 0.2rem; }
+.tl-funding-grid input, .tl-funding-grid select { padding: 0.25rem 0.35rem; }
+.tl-methods { display: flex; gap: 0.8rem; align-items: center; }
+.tl-radio { flex-direction: row !important; align-items: center; gap: 0.25rem; }
+.tl-account-row { display: flex; gap: 0.3rem; align-items: center; }
+.tl-refresh { cursor: pointer; padding: 0.25rem 0.5rem; }
+
+/* Adjustments */
+.tl-adj-row { display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0; }
+.tl-adj-label { flex: 1 1 12rem; }
+.tl-adj-amount { width: 7rem; }
+.tl-sign { font-size: 0.72rem; }
+.tl-save { color: #4caf50; }
+.tl-spend { color: var(--accent); }
+
+/* Timeline Builder — visualizations */
+.tl-viz { margin: 1.25rem 0; }
+.tl-viz h3 { margin: 0 0 0.15rem; font-size: 1rem; }
+.chart-body { margin-top: 0.5rem; }
+
+/* Span view (Gantt-ish) */
+.tl-spanview { margin-top: 0.5rem; }
+.tl-span-axis {
+  position: relative;
+  height: 1.1rem;
+  margin-left: 9rem;
+  border-bottom: 1px solid var(--border);
+}
+.tl-span-year {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+.tl-span-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.28rem 0; }
+.tl-span-label {
+  flex: 0 0 8.5rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl-span-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 0.85rem;
+  background: rgba(127, 127, 127, 0.12);
+  border-radius: 4px;
+}
+.tl-span-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: #64b5f6;
+  border-radius: 4px;
+  opacity: 0.85;
+}
+.tl-span-bar.purchase { background: #ff9800; }
+.tl-span-dot {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin: -0.275rem 0 0 -0.1rem;
+  border-radius: 50%;
+  background: #e94560;
+  border: 1px solid #fff;
+}
