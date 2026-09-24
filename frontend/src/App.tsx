@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCalculation } from "./hooks/useCalculation";
 import HousePurchaseSection from "./components/inputs/HousePurchase";
 import LoanTermsSection from "./components/inputs/LoanTerms";
@@ -29,10 +29,45 @@ export interface MDProps {
 /** Factory that maps a canonical line key + default into MDToggle props. */
 export type MakeMD = (key: string, defaultClass: Classification) => MDProps;
 
+type Page = "dashboard" | "console" | "banks" | "timeline";
+
+// Each tab is a real URL path so tabs can be opened/bookmarked independently
+// (e.g. app.mortgage-dashboard/timeline). The backend serves index.html for any
+// unknown path (SPA fallback), so deep links and refreshes work.
+const PAGE_PATHS: Record<Page, string> = {
+  dashboard: "/",
+  console: "/console",
+  banks: "/banks",
+  timeline: "/timeline",
+};
+
+function pageFromPath(pathname: string): Page {
+  const seg = pathname.replace(/^\/+/, "").split("/")[0].toLowerCase();
+  if (seg === "console" || seg === "banks" || seg === "timeline") return seg;
+  return "dashboard";
+}
+
 function App() {
   const { state, dispatch, result, loading, error } = useCalculation();
   const [profileAddress, setProfileAddress] = useState("");
-  const [page, setPage] = useState<"dashboard" | "console" | "banks" | "timeline">("dashboard");
+  const [page, setPageState] = useState<Page>(() => pageFromPath(window.location.pathname));
+
+  // Navigate to a tab by pushing its URL, so the address bar reflects the tab
+  // and browser back/forward works.
+  const setPage = (next: Page) => {
+    setPageState(next);
+    const path = PAGE_PATHS[next];
+    if (window.location.pathname !== path) {
+      window.history.pushState({ page: next }, "", path);
+    }
+  };
+
+  // Keep the active tab in sync with back/forward navigation.
+  useEffect(() => {
+    const onPop = () => setPageState(pageFromPath(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const setField = (section: keyof CalculateRequest) => (field: string, value: unknown) => {
     dispatch({ type: "SET_FIELD", section, field, value });
