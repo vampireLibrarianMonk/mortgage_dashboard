@@ -18,6 +18,7 @@ import ResultsPanel from "./components/results/ResultsPanel";
 import PrintReport from "./components/results/PrintReport";
 import ProfileManager from "./components/ProfileManager";
 import TimelinePage from "./components/timeline/TimelinePage";
+import { saveProfile } from "./api";
 import type { CalculateRequest, Classification, TimelinePlan } from "./types";
 import "./App.css";
 
@@ -95,6 +96,17 @@ function App() {
     dispatch({ type: "LOAD", data });
   };
 
+  // Save the current profile (whole request, incl. timeline_plan) to the given
+  // address. Used by the Timeline tab's Save button so the user can persist
+  // without switching back to the Dashboard. Keeps profileAddress in sync so the
+  // Dashboard's profile bar reflects the same address.
+  const saveCurrentProfile = async (address: string) => {
+    const trimmed = address.trim();
+    if (!trimmed) return;
+    await saveProfile(trimmed, state);
+    setProfileAddress(trimmed);
+  };
+
   const handlePrint = () => {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 16).replace(/[-:T]/g, (m) => m === "T" ? "_" : m === ":" ? "" : m);
@@ -161,6 +173,8 @@ function App() {
             plan={state.timeline_plan}
             onChange={(value: TimelinePlan) => setSection("timeline_plan")(value)}
             result={result}
+            address={profileAddress}
+            onSave={saveCurrentProfile}
           />
         </main>
       ) : (

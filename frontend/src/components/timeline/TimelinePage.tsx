@@ -12,6 +12,8 @@ interface Props {
   plan: TimelinePlan;
   onChange: (plan: TimelinePlan) => void;
   result: CalculateResponse | null;
+  address: string;
+  onSave: (address: string) => Promise<void>;
 }
 
 const fmt = (n: number) =>
@@ -25,10 +27,31 @@ const fmt = (n: number) =>
  * Editing the plan updates state.timeline_plan, which auto-recalculates
  * (useCalculation debounce) and refreshes result.timeline_projection.
  */
-export default function TimelinePage({ plan, onChange, result }: Props) {
+export default function TimelinePage({ plan, onChange, result, address, onSave }: Props) {
   const settings = plan.settings;
   const setSettings = (patch: Partial<typeof settings>) =>
     onChange({ ...plan, settings: { ...settings, ...patch } });
+
+  // Save-to-profile control. Uses the Dashboard's current address if set;
+  // otherwise the user types one here. Status gives quick save feedback.
+  const [addressDraft, setAddressDraft] = useState(address);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  useEffect(() => {
+    setAddressDraft(address);
+  }, [address]);
+
+  const handleSave = async () => {
+    const addr = addressDraft.trim();
+    if (!addr) return;
+    setSaveStatus("saving");
+    try {
+      await onSave(addr);
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 2500);
+    } catch {
+      setSaveStatus("error");
+    }
+  };
 
   const projection = result?.timeline_projection ?? [];
   const summary = result?.timeline_summary ?? {};
@@ -66,11 +89,32 @@ export default function TimelinePage({ plan, onChange, result }: Props) {
   return (
     <div className="timeline-builder">
       <div className="tl-head">
-        <h2>Timeline Builder</h2>
+        <div className="tl-head-top">
+          <h2>Timeline Builder</h2>
+          <div className="tl-save">
+            <input
+              type="text"
+              placeholder="Street address"
+              className="tl-save-address"
+              value={addressDraft}
+              onChange={(e) => setAddressDraft(e.target.value)}
+            />
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!addressDraft.trim() || saveStatus === "saving"}
+            >
+              {saveStatus === "saving" ? "Saving…" : "Save to profile"}
+            </button>
+            {saveStatus === "saved" && <span className="tl-save-ok">✔ saved</span>}
+            {saveStatus === "error" && <span className="tl-save-err">save failed</span>}
+          </div>
+        </div>
         <p className="section-hint">
           Plan future costs and purchases on a shared time axis and see how they
           draw down your monthly leftover. This is a forward-looking estimate
           (best-guess capital allocation), separate from your Dashboard budget.
+          Saving writes the whole profile (budget + timeline) to this address.
         </p>
       </div>
 
