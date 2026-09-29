@@ -292,12 +292,22 @@ def _rewards_child(order: OrderDetail) -> SplitChildPlan:
     return SplitChildPlan(amount=-round(order.rewards_points, 2), category="Rewards", note=note)
 
 
-def _fallback_category(txn: dict) -> str:
-    """Category a split child inherits when no item-rule matches: the parent's
-    existing category, unless it is a non-informative state."""
+def _fallback_category(txn: dict, order: OrderDetail | None = None) -> str:
+    """Category a split child inherits when no item-rule matches.
+
+    Precedence: (1) the parent transaction's existing category, unless it is a
+    non-informative state; (2) for a GROCERY order (Whole Foods / Amazon Fresh),
+    "Household" - unmatched line items in a grocery order are food, so defaulting
+    them to Household (where groceries live) keeps the whole order in the budget
+    instead of silently dropping unmatched items into Uncategorized. This is
+    vendor-level, so it needs no per-item keyword rules; (3) otherwise
+    "Uncategorized".
+    """
     cat = txn.get("category")
     if cat and cat not in ("Uncategorized", "Split"):
         return cat
+    if order is not None and order.grocery:
+        return "Household"
     return "Uncategorized"
 
 
@@ -354,7 +364,7 @@ def plan_split(order: OrderDetail) -> OrderSplitPlan:
         # Points paid for part of the order. Item children carry the FULL consumed
         # value; a negative Rewards child brings the total down to the actual card
         # charge. Budget then shows full consumption + a rewards income line.
-        plan.children = _allocate_children(order, _fallback_category(best),
+        plan.children = _allocate_children(order, _fallback_category(best, order),
                                            target_total=order.consumed_value)
         plan.children.append(_rewards_child(order))
         plan.warnings.append(
@@ -364,7 +374,7 @@ def plan_split(order: OrderDetail) -> OrderSplitPlan:
         # For a grocery order the charge can drift from the estimate; scale the
         # split so children sum to the ACTUAL charge, not the PDF estimate.
         target = charge_amt if order.grocery else None
-        plan.children = _allocate_children(order, _fallback_category(best), target_total=target)
+        plan.children = _allocate_children(order, _fallback_category(best, order), target_total=target)
         if order.grocery and abs(charge_amt - round(order.total, 2)) > _AMOUNT_TOLERANCE:
             plan.warnings.append(
                 f"grocery amount drift: estimate ${order.total:.2f} -> charged "

@@ -451,6 +451,51 @@ def test_grocery_matches_drifted_whole_foods_charge(isolated_store):
     assert round(sum(c.amount for c in plan.children), 2) == 16.84
 
 
+def test_grocery_unmatched_items_default_to_household(isolated_store):
+    # A Whole Foods order whose items match no item-rule: unmatched items in a
+    # grocery order default to Household (food), not Uncategorized, so the whole
+    # order stays counted in the budget. Vendor-level, no per-item keyword rules.
+    ts.save_transactions([
+        _row("wf", "Whole Foods", 16.67, "2026-08-20", authorized_date="2026-08-19"),
+    ])
+    txt = (
+        "Order Summary\nOrder placed August 19, 2026  Order # 113-0000000-0000099\n"
+        "Purchased at Whole Foods Market\n"
+        "Item(s) Subtotal: $16.67Shipping & Handling: $0.00"
+        "Total before tax: $16.67Estimated tax to becollected: $0.00\nGrand Total: $16.67\n"
+        "Some Obscure Snack Brand Nobody Has A Rule For\n$3.59\n"
+        "Another Unruled Grocery Item\n$9.49\n"
+        "Third Mystery Food\n$3.59\n"
+    )
+    od = orders_amazon.AmazonOrderReader().parse_text(txt)
+    assert od.grocery is True
+    plan = order_service.plan_split(od)
+    assert plan.status == "ready"
+    # Every unmatched item lands in Household (not Uncategorized).
+    assert all(c.category == "Household" for c in plan.children)
+
+
+def test_non_grocery_unmatched_items_stay_uncategorized(isolated_store):
+    # A regular (non-grocery) Amazon order keeps the conservative fallback:
+    # unmatched items go to Uncategorized (the basket may contain non-food goods),
+    # so the grocery default must NOT leak to ordinary Amazon orders.
+    ts.save_transactions([
+        _row("az", "Amazon", 20.00, "2026-08-20", authorized_date="2026-08-19"),
+    ])
+    txt = (
+        "Order Summary\nOrder placed August 19, 2026  Order # 113-0000000-0000098\n"
+        "Item(s) Subtotal: $20.00Shipping & Handling: $0.00"
+        "Total before tax: $20.00Estimated tax to becollected: $0.00\nGrand Total: $20.00\n"
+        "Delivered August 20\n"
+        "Some Random Gadget No Rule\n$20.00\n"
+    )
+    od = orders_amazon.AmazonOrderReader().parse_text(txt)
+    assert od.grocery is False
+    plan = order_service.plan_split(od)
+    assert plan.status == "ready"
+    assert all(c.category == "Uncategorized" for c in plan.children)
+
+
 def test_already_applied_order_not_rematched(isolated_store):
     # Once an order is itemized (its split parent stamped with the order_no),
     # re-planning must NOT match it to a different same-amount charge.
