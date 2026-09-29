@@ -42,8 +42,9 @@ $mapping = @{
     "production_client_id" = "plaid_production_client_id"
     "production_secret"    = "plaid_production_secret"
 }
-if (-not $vals.ContainsKey("client_id")) {
-    throw ".env must contain at least client_id"
+if (-not (($vals.ContainsKey("client_id") -and $vals["client_id"]) -or
+          ($vals.ContainsKey("production_client_id") -and $vals["production_client_id"]))) {
+    throw ".env must contain at least client_id or production_client_id"
 }
 
 # Native Windows Credential API (advapi32) so secrets never touch the command line.

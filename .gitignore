@@ -31,6 +31,8 @@ Thumbs.db
 
 # Deploy — third-party proxy binary (install via winget; see deploy/README.md)
 deploy/caddy.exe
+# Deploy — runtime health-check logs (self-heal actions; not source)
+deploy/logs/
 # Deploy — generated frontend build served by FastAPI
 frontend/dist/
 
