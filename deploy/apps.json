@@ -11,6 +11,14 @@
       "working_dir": "backend",
       "start_command": "venv\\Scripts\\uvicorn.exe main:app --host 127.0.0.1 --port 9001",
       "health_path": "/healthz"
+    },
+    {
+      "name": "life-planning",
+      "hostname": "app.life_planning",
+      "port": 9002,
+      "working_dir": "..\\life_planning\\app\\backend",
+      "start_command": "venv\\Scripts\\uvicorn.exe main:app --host 127.0.0.1 --port 9002",
+      "health_path": "/api/health"
     }
   ]
 }
