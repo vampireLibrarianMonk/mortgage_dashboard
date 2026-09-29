@@ -72,6 +72,43 @@ def healthz():
     return {"status": "ok"}
 
 
+# --- System refresh (manual, replaces the recurring health-check pop-ups) ---
+# The health check runs once at logon; instead of polling every few minutes (a
+# PowerShell window kept flashing), the app exposes a manual "Refresh services"
+# action. It runs deploy/health-check.ps1, which relaunches the proxy / sibling
+# app if they are down, and returns the check's output for the UI to display.
+
+@app.post("/system/refresh")
+def system_refresh():
+    """Run the deploy health check once, on demand, and return its output lines.
+
+    Best-effort: if the script or PowerShell isn't available (e.g. non-Windows dev
+    box), report that cleanly rather than erroring.
+    """
+    import subprocess
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parent.parent / "deploy" / "health-check.ps1"
+    if not script.is_file():
+        return {"ok": False, "output": [f"health-check.ps1 not found at {script}"]}
+    try:
+        proc = subprocess.run(  # noqa: S603 - fixed script path, no user input
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+             "-File", str(script)],
+            capture_output=True, text=True, timeout=60,
+        )
+        lines = [ln for ln in (proc.stdout or "").splitlines() if ln.strip()]
+        if proc.stderr and proc.stderr.strip():
+            lines += ["stderr: " + ln for ln in proc.stderr.splitlines() if ln.strip()]
+        return {"ok": proc.returncode == 0, "output": lines or ["health check ran (no output)"]}
+    except FileNotFoundError:
+        return {"ok": False, "output": ["powershell.exe not available on this host"]}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "output": ["health check timed out after 60s"]}
+    except Exception as e:  # noqa: BLE001 - surface any launch failure to the UI
+        return {"ok": False, "output": [f"failed to run health check: {e}"]}
+
+
 # --- Static frontend (production) ---
 # When the frontend has been built (`npm run build`), FastAPI serves the compiled
 # SPA from frontend/dist so the whole app runs on a single port behind the proxy.

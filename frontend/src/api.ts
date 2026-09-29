@@ -251,6 +251,21 @@ export async function exchangePublicToken(publicToken: string, name: string): Pr
   return res.json();
 }
 
+// --- System refresh (manual health check; replaces recurring pop-ups) ---
+
+export interface SystemRefreshResult {
+  ok: boolean;
+  output: string[];
+}
+
+// Runs deploy/health-check.ps1 once on demand: relaunches the proxy / sibling
+// app if they're down and returns the check's output lines.
+export async function systemRefresh(): Promise<SystemRefreshResult> {
+  const res = await fetch(`${API_BASE}/system/refresh`, { method: "POST" });
+  if (!res.ok) throw new Error(`system refresh failed: ${res.status}`);
+  return res.json();
+}
+
 // --- Balance snapshots (Timeline Builder funding dropdown) ---
 
 export interface BalanceSnapshotAccount {

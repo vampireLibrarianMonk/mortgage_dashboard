@@ -18,7 +18,7 @@ import ResultsPanel from "./components/results/ResultsPanel";
 import PrintReport from "./components/results/PrintReport";
 import ProfileManager from "./components/ProfileManager";
 import TimelinePage from "./components/timeline/TimelinePage";
-import { saveProfile } from "./api";
+import { saveProfile, systemRefresh } from "./api";
 import type { CalculateRequest, Classification, TimelinePlan } from "./types";
 import "./App.css";
 
@@ -107,6 +107,26 @@ function App() {
     setProfileAddress(trimmed);
   };
 
+  // Manual "Refresh services" — runs the deploy health check on demand (relaunch
+  // the proxy / sibling app if down). Replaces the old every-5-min pop-up task.
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
+  const handleRefreshServices = async () => {
+    setRefreshing(true);
+    setRefreshMsg(null);
+    try {
+      const res = await systemRefresh();
+      setRefreshMsg(res.ok ? "✔ services healthy" : "⚠ see details");
+      // Surface the check's output in the console for the curious.
+      console.info("service refresh:\n" + res.output.join("\n"));
+    } catch {
+      setRefreshMsg("refresh failed");
+    } finally {
+      setRefreshing(false);
+      setTimeout(() => setRefreshMsg(null), 4000);
+    }
+  };
+
   const handlePrint = () => {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 16).replace(/[-:T]/g, (m) => m === "T" ? "_" : m === ":" ? "" : m);
@@ -152,11 +172,23 @@ function App() {
             Timeline
           </button>
         </nav>
-        {page === "dashboard" && result && (
-          <button type="button" className="print-btn" onClick={handlePrint}>
-            📄 Export PDF
+        <div className="header-actions">
+          <button
+            type="button"
+            className="refresh-svc-btn"
+            onClick={handleRefreshServices}
+            disabled={refreshing}
+            title="Re-check services and restart the proxy / other app if they're down"
+          >
+            {refreshing ? "⟳ Refreshing…" : "⟳ Refresh services"}
           </button>
-        )}
+          {refreshMsg && <span className="refresh-svc-msg">{refreshMsg}</span>}
+          {page === "dashboard" && result && (
+            <button type="button" className="print-btn" onClick={handlePrint}>
+              📄 Export PDF
+            </button>
+          )}
+        </div>
       </header>
 
       {page === "console" ? (

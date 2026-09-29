@@ -23,17 +23,18 @@
 #   plaid_item_<slug>_access_token / _cursor into SYSTEM's vault.
 #
 # Optional self-heal task (-WithHealthCheck):
-#   MortgageDashboard-HealthCheck -> deploy\health-check.ps1 (at logon + every N min)
+#   MortgageDashboard-HealthCheck -> deploy\health-check.ps1 (ONCE at logon, hidden)
 #       ALSO runs as the invoking user, so when it relaunches the app it uses the
 #       same (correct) user vault. If it ran as SYSTEM it would relaunch a sandbox
-#       instance and fight the real one.
+#       instance and fight the real one. Runs once at logon (no recurring poll —
+#       that popped a window every few minutes); on-demand re-checks are done from
+#       the app's "Refresh services" button instead.
 #
 # -Remove takes down all three tasks.
 
 param(
     [switch]$Remove,
     [switch]$WithHealthCheck,
-    [int]$HealthCheckMinutes = 5,
     # The account the app + health-check run as. Defaults to the invoking user,
     # which is normally correct (its vault holds the Plaid creds + bank tokens).
     [string]$AppUser = ([Security.Principal.WindowsIdentity]::GetCurrent().Name)
@@ -97,19 +98,18 @@ function Register-AppTask($name, $scriptPath, $user) {
     Write-Host "Registered task: $name -> $scriptPath (user '$user', at logon)"
 }
 
-# A recurring self-heal task: at the user's logon AND every N minutes, run
-# health-check.ps1 (checks the app + proxy, relaunches whatever is down). Runs AS
-# THE USER so its app relaunch uses the same user vault the app needs (a SYSTEM
-# relaunch would start a sandbox instance). The proxy portion can only warn if it
-# can't bind :80 as the user; the proxy's own SYSTEM task + restart handles that.
-function Register-HealthCheckTask($name, $scriptPath, $everyMinutes, $user) {
+# A self-heal task that runs ONCE at the user's logon (checks the app + proxy,
+# relaunches whatever is down). Runs AS THE USER so its app relaunch uses the same
+# user vault the app needs (a SYSTEM relaunch would start a sandbox instance).
+# NOTE: no recurring trigger — the every-N-minutes poll popped a PowerShell window
+# repeatedly, so on-demand re-checks are done via the app's "Refresh services"
+# button (POST /system/refresh) instead. Launched hidden to avoid the logon flash.
+function Register-HealthCheckTask($name, $scriptPath, $user) {
     $psExe = "powershell.exe"
-    $args = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -AppsOnly"
+    $args = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptPath`" -AppsOnly"
     $action = New-ScheduledTaskAction -Execute $psExe -Argument $args
 
     $logonTrigger = New-ScheduledTaskTrigger -AtLogOn -User $user
-    $repeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-        -RepetitionInterval (New-TimeSpan -Minutes $everyMinutes)
 
     $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
@@ -120,15 +120,15 @@ function Register-HealthCheckTask($name, $scriptPath, $everyMinutes, $user) {
         Unregister-ScheduledTask -TaskName $name -Confirm:$false
     }
     Register-ScheduledTask -TaskName $name -Action $action `
-        -Trigger @($logonTrigger, $repeatTrigger) -Principal $principal -Settings $settings | Out-Null
-    Write-Host "Registered task: $name -> $scriptPath (user '$user', at logon + every $everyMinutes min)"
+        -Trigger $logonTrigger -Principal $principal -Settings $settings | Out-Null
+    Write-Host "Registered task: $name -> $scriptPath (user '$user', at logon only)"
 }
 
 Register-AppTask $appsTask (Join-Path $here "start-apps.ps1") $AppUser
 Register-ProxyTask $proxyTask (Join-Path $here "start-proxy.ps1")
 
 if ($WithHealthCheck) {
-    Register-HealthCheckTask $healthTask (Join-Path $here "health-check.ps1") $HealthCheckMinutes $AppUser
+    Register-HealthCheckTask $healthTask (Join-Path $here "health-check.ps1") $AppUser
 }
 
 Write-Host ""
@@ -141,5 +141,6 @@ if ($WithHealthCheck) {
 } else {
     Write-Host ""
     Write-Host "Tip: add -WithHealthCheck to also register a self-heal task (runs as the"
-    Write-Host "     same user) that restarts the app if it dies between logons."
+    Write-Host "     same user, once at logon) that restarts the app if it's down."
+    Write-Host "     On-demand re-checks: use the app's 'Refresh services' button."
 }
