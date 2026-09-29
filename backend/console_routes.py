@@ -9,6 +9,7 @@ Commands:
   status                         show connected banks + txn counts
   sync                           pull transactions from all linked banks (>= 2026-04-01)
   list [uncategorized|<category>]   list transactions (default: uncategorized), capped
+  categories                     list all categories (grouped) with current counts
   merchants [uncategorized]      list distinct merchants w/ counts + totals
   cat <merchant substring> <Category>   categorize all matching txns (creates a rule)
   rule ls                        list merchant rules
@@ -26,10 +27,10 @@ import shlex
 from collections import defaultdict
 from pathlib import Path
 
-import balances_store
 from fastapi import APIRouter, File, UploadFile
 from pydantic import BaseModel
 
+import balances_store
 import credential_store as store
 import txn_store as ts
 from actuals import BUDGET_CATEGORIES, UNBUDGETED, export_actuals
@@ -67,6 +68,7 @@ def _cmd_help(_args) -> list[str]:
         "  status                            connected banks + counts",
         "  sync                              pull transactions from linked banks",
         "  list [uncategorized|<Category>]   list transactions (default uncategorized)",
+        "  categories                        list all categories (grouped) + counts",
         "  merchants [uncategorized]         distinct merchants + counts/totals",
         "  cat <merchant text> <Category> [@mask]  categorize all matching (creates a rule;",
         "                                    @mask scopes it to one account, e.g. @0000)",
@@ -79,7 +81,6 @@ def _cmd_help(_args) -> list[str]:
         "  orders [go]                       preview (or `go` to apply) order-PDF splits in dump/",
         "  undo                              revert the last change",
         "  plaid [status|items|balances|link]  Plaid diagnostics (no GUI panel)",
-        f"  categories: {', '.join(ts.CATEGORIES)}",
     ]
 
 
@@ -91,6 +92,38 @@ def _cmd_status(_args) -> list[str]:
     lines.append(f"banks: {', '.join(i['name'] for i in items) or '(none)'}")
     lines.append(f"transactions: {len(txns)} total, {uncat} uncategorized")
     lines.append(f"rules: {len(ts.load_rules())}")
+    return lines
+
+
+def _cmd_categories(_args) -> list[str]:
+    """List the categories the console understands, grouped, with a live count of
+    how many transactions currently sit in each (split children counted by their
+    own category; Split parents excluded so totals aren't double-counted)."""
+    txns = ts.load_transactions()
+    counts: dict[str, int] = defaultdict(int)
+    for t in txns:
+        if t.get("category") == "Split" and t.get("split_children"):
+            for c in t["split_children"]:
+                counts[c.get("category", "Uncategorized")] += 1
+        else:
+            counts[t.get("category", "Uncategorized")] += 1
+
+    def fmt(names: list[str]) -> list[str]:
+        return [f"  {n:<18} {counts.get(n, 0):>4}" for n in names]
+
+    # Extended (non-budget) spending categories = everything the store knows that
+    # isn't one of the 7 budget cats or a tracking-only/special bucket.
+    special = set(UNBUDGETED) | {
+        "Split", "Rewards", "Income", "Ignore", "Review", "Reference", "Uncategorized",
+    }
+    extended = [c for c in ts.CATEGORIES if c not in BUDGET_CATEGORIES and c not in special]
+
+    lines = ["categories (with current transaction counts):", "", "budget categories:"]
+    lines += fmt(list(BUDGET_CATEGORIES))
+    lines += ["", "other spending categories:"]
+    lines += fmt(extended)
+    lines += ["", "tracking / special (excluded from budget totals):"]
+    lines += fmt([c for c in ts.CATEGORIES if c in special])
     return lines
 
 
@@ -914,6 +947,7 @@ def _category_table(title: str, actual: dict, budget: dict, uncat: int,
 
 DISPATCH = {
     "help": _cmd_help, "status": _cmd_status, "sync": _cmd_sync, "list": _cmd_list,
+    "categories": _cmd_categories,
     "merchants": _cmd_merchants, "cat": _cmd_cat, "set": _cmd_set, "rule": _cmd_rule,
     "label": _cmd_label,
     "summary": _cmd_summary, "budget": _cmd_budget, "undo": _cmd_undo, "plaid": _cmd_plaid,

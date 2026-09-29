@@ -47,8 +47,23 @@ def test_help_lists_commands_and_categories():
     joined = "\n".join(out)
     assert "commands:" in joined
     assert "cat <merchant text>" in joined
-    # categories line includes the user-defined ones.
-    assert "Medical" in joined and "ATM Withdrawals" in joined
+    # help points to the dedicated `categories` command rather than dumping the list.
+    assert "categories" in joined
+
+
+def test_categories_command_groups_and_counts(make_txn):
+    import txn_store as ts
+    ts.save_transactions([
+        make_txn("t1", "Grocery", 100.0, category="Household"),
+        make_txn("t2", "Doc", 50.0, category="Medical"),
+    ])
+    out = run("categories")
+    joined = "\n".join(out)
+    # grouped headers + budget, extended, and tracking categories all appear
+    assert "budget categories:" in joined
+    assert "Household" in joined and "Medical" in joined and "ATM Withdrawals" in joined
+    # counts reflect the store (Household has 1)
+    assert any("Household" in line and "1" in line for line in out)
 
 
 # --- cat: rule creation, multi-word category, @mask ----------------------------
