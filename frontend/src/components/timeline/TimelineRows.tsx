@@ -29,6 +29,12 @@ function accountLabel(a: BalanceSnapshotAccount): string {
   return `${bank} ••${mask}${name} — ${fmtBal(a.balance)}`;
 }
 
+// When "Ongoing" is unchecked we seed a concrete end month so the picker isn't
+// blank. Default to the start month (the user then adjusts it forward).
+function defaultEndFor(start: string): string {
+  return /^\d{4}-\d{2}$/.test(start) ? start : "";
+}
+
 /**
  * The timelines builder table. Each row is a labeled recurring cost with a
  * start/end span, base amount + unit, yearly escalation, and an optional
@@ -77,6 +83,23 @@ export default function TimelineRows({
 
       {timelines.length === 0 && <p className="tl-empty">No timelines yet.</p>}
 
+      {timelines.length > 0 && (
+        <div className="tl-row tl-row-header" aria-hidden="true">
+          <span>Label</span>
+          <span>Category</span>
+          <span>Start</span>
+          <span>End</span>
+          <span className="tl-col-center">Ongoing</span>
+          <span>Base</span>
+          <span className="tl-col-center">Type</span>
+          <span>Per</span>
+          <span>Escalation</span>
+          <span>Rate</span>
+          <span className="tl-col-center">Fund</span>
+          <span></span>
+        </div>
+      )}
+
       {timelines.map((row, i) => (
         <div key={i} className="tl-row-wrap">
           <div className="tl-row">
@@ -97,37 +120,28 @@ export default function TimelineRows({
                 </option>
               ))}
             </select>
-            <label className="tl-month">
-              start
+            <input
+              className="tl-start"
+              type="month"
+              value={row.start}
+              onChange={(e) => update(i, { start: e.target.value })}
+            />
+            <input
+              className="tl-end"
+              type="month"
+              value={row.end ?? ""}
+              min={row.start || undefined}
+              disabled={row.end === null}
+              title={row.end === null ? "Ongoing — no end date. Uncheck Ongoing to set one." : "End month"}
+              onChange={(e) => update(i, { end: e.target.value || null })}
+            />
+            <label className="tl-ongoing-cell" title="No end date — this cost runs to the horizon">
               <input
-                type="month"
-                value={row.start}
-                onChange={(e) => update(i, { start: e.target.value })}
-              />
-            </label>
-            <label className="tl-month">
-              <span className="tl-month-cap">
-                end
-                {row.end ? (
-                  <button
-                    type="button"
-                    className="tl-end-clear"
-                    title="Clear end (make ongoing)"
-                    onClick={() => update(i, { end: null })}
-                  >
-                    ongoing ×
-                  </button>
-                ) : (
-                  <span className="tl-end-ongoing" title="No end date set — this cost runs to the horizon">
-                    ongoing
-                  </span>
-                )}
-              </span>
-              <input
-                type="month"
-                value={row.end ?? ""}
-                min={row.start || undefined}
-                onChange={(e) => update(i, { end: e.target.value || null })}
+                type="checkbox"
+                checked={row.end === null}
+                onChange={(e) =>
+                  update(i, { end: e.target.checked ? null : (row.start || defaultEndFor(row.start)) })
+                }
               />
             </label>
             <input
@@ -152,7 +166,6 @@ export default function TimelineRows({
               <option value="month">/mo</option>
               <option value="year">/yr</option>
             </select>
-            <span className="tl-esc-label">esc</span>
             <input
               className="tl-esc"
               type="number"
@@ -174,7 +187,7 @@ export default function TimelineRows({
               title="Purchase funding"
               onClick={() => toggleFundingRow(i)}
             >
-              ⚙ Funding
+              ⚙
             </button>
             <button type="button" className="tl-remove" onClick={() => remove(i)}>
               ×
