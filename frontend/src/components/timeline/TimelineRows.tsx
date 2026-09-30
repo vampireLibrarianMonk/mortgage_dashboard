@@ -8,6 +8,7 @@ import type {
   Timeline,
 } from "../../types";
 import { TIMELINE_CATEGORIES, newPurchase, newTimeline } from "./constants";
+import MonthYearInput from "./MonthYearInput";
 
 interface Props {
   timelines: Timeline[];
@@ -120,21 +121,22 @@ export default function TimelineRows({
                 </option>
               ))}
             </select>
-            <input
-              className="tl-start"
-              type="month"
-              value={row.start}
-              onChange={(e) => update(i, { start: e.target.value })}
-            />
-            <input
-              className="tl-end"
-              type="month"
-              value={row.end ?? ""}
-              min={row.start || undefined}
-              disabled={row.end === null}
-              title={row.end === null ? "Ongoing — no end date. Uncheck Ongoing to set one." : "End month"}
-              onChange={(e) => update(i, { end: e.target.value || null })}
-            />
+            <div className="tl-start">
+              <MonthYearInput
+                value={row.start}
+                title="Start month"
+                onChange={(v) => update(i, { start: v })}
+              />
+            </div>
+            <div className="tl-end">
+              <MonthYearInput
+                value={row.end ?? ""}
+                min={row.start || undefined}
+                disabled={row.end === null}
+                title={row.end === null ? "Ongoing — no end date. Uncheck Ongoing to set one." : "End month"}
+                onChange={(v) => update(i, { end: v || null })}
+              />
+            </div>
             <label className="tl-ongoing-cell" title="No end date — this cost runs to the horizon">
               <input
                 type="checkbox"

@@ -1040,8 +1040,8 @@ h4 {
   grid-template-columns:
     minmax(9rem, 1.6fr)  /* Label */
     minmax(7rem, 1fr)    /* Category */
-    7.5rem               /* Start (month input) */
-    7.5rem               /* End (month input) */
+    8.8rem               /* Start (month select + year) */
+    8.8rem               /* End (month select + year) */
     4.6rem               /* Ongoing (checkbox; wide enough for the header word) */
     5rem                 /* Base */
     3.8rem               /* Type (cost/income) */
@@ -1053,14 +1053,23 @@ h4 {
   align-items: center;
   column-gap: 0.4rem;
   row-gap: 0.25rem;
-  min-width: 61.5rem;    /* keep columns aligned; the fieldset scrolls if narrower */
+  min-width: 64rem;      /* keep columns aligned; the fieldset scrolls if narrower */
 }
 .tl-row > * { min-width: 0; }  /* let cells shrink instead of overflowing */
 .tl-row input, .tl-row select {
   padding: 0.25rem 0.35rem; font-size: 0.82rem; width: 100%; box-sizing: border-box;
 }
-.tl-row input[type="month"] { min-width: 0; }
-.tl-row input:disabled { opacity: 0.45; cursor: not-allowed; }
+.tl-row input:disabled, .tl-row select:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* Month + year entry (Start/End) — a compact 2-field control that fills its
+   column. No native calendar icon (which truncated the field and blocked typing);
+   both fields are fully keyboard-enterable. */
+.tl-monthyear { display: grid; grid-template-columns: 1fr 1fr; gap: 0.2rem; }
+.tl-my-month, .tl-my-year { padding: 0.25rem 0.2rem; font-size: 0.8rem; }
+/* Trim the number-spinner so the year isn't crowded (still arrow-adjustable). */
+.tl-my-year { -moz-appearance: textfield; }
+.tl-my-year::-webkit-outer-spin-button,
+.tl-my-year::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
 /* Header row: same grid, just labels. */
 .tl-row-header {
