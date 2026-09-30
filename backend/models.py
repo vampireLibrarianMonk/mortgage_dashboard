@@ -111,7 +111,11 @@ class ExtraPrincipalFrequency(str, Enum):
 
 
 class RecurringExtraPrincipal(BaseModel):
-    amount: float = Field(gt=0)
+    # ge=0 (not gt=0): while the user edits the amount it can pass through 0/empty,
+    # and a 0 amount should simply contribute nothing rather than 422-ing the whole
+    # /calculate request (which froze the results). The engine guards with
+    # min(amount, balance), so 0 is a safe no-op.
+    amount: float = Field(ge=0, default=0)
     frequency: ExtraPrincipalFrequency = ExtraPrincipalFrequency.monthly
     start_year: int
     end_year: int | None = None  # None means "until payoff"
@@ -124,7 +128,10 @@ class LumpSumPayment(BaseModel):
 
 class EscalatingExtraPrincipal(BaseModel):
     """A monthly extra-principal payment that increases by a fixed amount once per year."""
-    start_amount: float = Field(gt=0)  # initial monthly extra payment
+    # ge=0 (not gt=0): same reasoning as RecurringExtraPrincipal.amount — a 0/empty
+    # intermediate while editing must not invalidate the whole request; the engine
+    # treats 0 as no payment.
+    start_amount: float = Field(ge=0, default=0)  # initial monthly extra payment
     annual_increase: float = Field(ge=0, default=0)  # added to the monthly amount each anniversary year
     start_year: int
     end_year: int | None = None  # None means "until payoff"
