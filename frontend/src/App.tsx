@@ -18,6 +18,8 @@ import ResultsPanel from "./components/results/ResultsPanel";
 import PrintReport from "./components/results/PrintReport";
 import ProfileManager from "./components/ProfileManager";
 import TimelinePage from "./components/timeline/TimelinePage";
+import ScenarioTabs from "./components/timeline/ScenarioTabs";
+import TaxPrepPage from "./components/tax/TaxPrepPage";
 import { saveProfile, systemRefresh } from "./api";
 import type { CalculateRequest, Classification, TimelinePlan } from "./types";
 import "./App.css";
@@ -30,7 +32,7 @@ export interface MDProps {
 /** Factory that maps a canonical line key + default into MDToggle props. */
 export type MakeMD = (key: string, defaultClass: Classification) => MDProps;
 
-type Page = "dashboard" | "console" | "banks" | "timeline";
+type Page = "dashboard" | "console" | "banks" | "timeline" | "tax";
 
 // Each tab is a real URL path so tabs can be opened/bookmarked independently
 // (e.g. app.mortgage-dashboard/timeline). The backend serves index.html for any
@@ -40,11 +42,12 @@ const PAGE_PATHS: Record<Page, string> = {
   console: "/console",
   banks: "/banks",
   timeline: "/timeline",
+  tax: "/tax",
 };
 
 function pageFromPath(pathname: string): Page {
   const seg = pathname.replace(/^\/+/, "").split("/")[0].toLowerCase();
-  if (seg === "console" || seg === "banks" || seg === "timeline") return seg;
+  if (seg === "console" || seg === "banks" || seg === "timeline" || seg === "tax") return seg;
   return "dashboard";
 }
 
@@ -52,6 +55,8 @@ function App() {
   const { state, dispatch, result, loading, error } = useCalculation();
   const [profileAddress, setProfileAddress] = useState("");
   const [page, setPageState] = useState<Page>(() => pageFromPath(window.location.pathname));
+  // Active tax year for the Tax Prep tab (defaults to 2025, the current corpus).
+  const [taxYear, setTaxYear] = useState(2025);
 
   // Navigate to a tab by pushing its URL, so the address bar reflects the tab
   // and browser back/forward works.
@@ -105,6 +110,53 @@ function App() {
     if (!trimmed) return;
     await saveProfile(trimmed, state);
     setProfileAddress(trimmed);
+  };
+
+  // --- Timeline scenarios (named plans the user tabs between; per-profile) ---
+  const scenarios = state.timeline_scenarios ?? [{ name: "Base", plan: state.timeline_plan }];
+  const activeScenario = Math.min(state.active_scenario ?? 0, scenarios.length - 1);
+
+  // Commit a new scenarios array + active index, mirroring the active plan into
+  // timeline_plan (which the backend projection reads).
+  const commitScenarios = (next: typeof scenarios, active: number) => {
+    const idx = Math.max(0, Math.min(active, next.length - 1));
+    dispatch({ type: "SET_SECTION", section: "timeline_scenarios", value: next });
+    dispatch({ type: "SET_SECTION", section: "active_scenario", value: idx });
+    dispatch({ type: "SET_SECTION", section: "timeline_plan", value: next[idx].plan });
+  };
+
+  // Edit the active scenario's plan (called by TimelinePage via onChange).
+  const setActivePlan = (plan: TimelinePlan) => {
+    const next = scenarios.map((s, i) => (i === activeScenario ? { ...s, plan } : s));
+    commitScenarios(next, activeScenario);
+  };
+
+  const emptyPlan = (): TimelinePlan => ({
+    settings: { starting_leftover: 0, carry_over_leftover: false, horizon_years: 10 },
+    timelines: [],
+    adjustments: [],
+  });
+
+  const selectScenario = (i: number) => commitScenarios(scenarios, i);
+  const addScenario = () => {
+    const next = [...scenarios, { name: `Scenario ${scenarios.length + 1}`, plan: emptyPlan() }];
+    commitScenarios(next, next.length - 1);
+  };
+  const duplicateScenario = () => {
+    const src = scenarios[activeScenario];
+    const copy = { name: `${src.name} (copy)`, plan: structuredClone(src.plan) };
+    const next = [...scenarios.slice(0, activeScenario + 1), copy, ...scenarios.slice(activeScenario + 1)];
+    commitScenarios(next, activeScenario + 1);
+  };
+  const renameScenario = (i: number, name: string) => {
+    const next = scenarios.map((s, idx) => (idx === i ? { ...s, name } : s));
+    commitScenarios(next, activeScenario);
+  };
+  const deleteScenario = (i: number) => {
+    if (scenarios.length <= 1) return;
+    const next = scenarios.filter((_, idx) => idx !== i);
+    const active = i <= activeScenario ? Math.max(0, activeScenario - 1) : activeScenario;
+    commitScenarios(next, active);
   };
 
   // Manual "Refresh services" — runs the deploy health check on demand (relaunch
@@ -171,6 +223,13 @@ function App() {
           >
             Timeline
           </button>
+          <button
+            type="button"
+            className={page === "tax" ? "page-tab active" : "page-tab"}
+            onClick={() => setPage("tax")}
+          >
+            Tax Prep
+          </button>
         </nav>
         <div className="header-actions">
           <button
@@ -201,13 +260,26 @@ function App() {
         </main>
       ) : page === "timeline" ? (
         <main className="timeline-page">
+          <ScenarioTabs
+            scenarios={scenarios}
+            active={activeScenario}
+            onSelect={selectScenario}
+            onAdd={addScenario}
+            onDuplicate={duplicateScenario}
+            onRename={renameScenario}
+            onDelete={deleteScenario}
+          />
           <TimelinePage
-            plan={state.timeline_plan}
-            onChange={(value: TimelinePlan) => setSection("timeline_plan")(value)}
+            plan={scenarios[activeScenario].plan}
+            onChange={setActivePlan}
             result={result}
             address={profileAddress}
             onSave={saveCurrentProfile}
           />
+        </main>
+      ) : page === "tax" ? (
+        <main className="tax-page">
+          <TaxPrepPage year={taxYear} onYearChange={setTaxYear} />
         </main>
       ) : (
         <>

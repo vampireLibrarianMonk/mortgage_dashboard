@@ -1221,3 +1221,154 @@ h4 {
 .refresh-svc-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .refresh-svc-btn:disabled { opacity: 0.6; cursor: default; }
 .refresh-svc-msg { font-size: 0.78rem; color: var(--muted); }
+
+/* Timeline scenario tabs — named plans the user switches between. The strip
+   scrolls horizontally when there are more tabs than fit (no hard cap). */
+.scenario-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+.scenario-tabs-strip {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  scrollbar-width: thin;
+}
+.scenario-tab {
+  flex: 0 0 auto;
+  max-width: 14rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: rgba(127, 127, 127, 0.08);
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+.scenario-tab.active {
+  background: var(--panel, rgba(100, 181, 246, 0.15));
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.scenario-tab-name { pointer-events: none; }
+.scenario-tab-edit {
+  font-size: 0.85rem;
+  width: 9rem;
+  padding: 0.1rem 0.25rem;
+}
+.scenario-tab-actions { flex: 0 0 auto; display: flex; gap: 0.25rem; }
+.scenario-tab-actions button {
+  width: 1.9rem;
+  height: 1.9rem;
+  font-size: 1rem;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+}
+.scenario-tab-actions button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.scenario-tab-actions button:disabled { opacity: 0.4; cursor: default; }
+
+/* --- Tax Prep tab (Phase 1: document foundation) --- */
+.tax-prep { max-width: 72rem; }
+.tax-head-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.tax-year-pick { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; }
+.tax-year-pick select { padding: 0.25rem 0.4rem; }
+
+/* Honest placeholder for the federal/VA answer — no numbers computed yet. */
+.tax-picture-placeholder { display: flex; gap: 1rem; margin: 1rem 0 1.5rem; }
+.tax-pic-tile {
+  flex: 1 1 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.tax-pic-pending { opacity: 0.7; border-style: dashed; }
+.tax-pic-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.tax-pic-value { font-size: 1.8rem; font-weight: 700; }
+.tax-pic-note { font-size: 0.72rem; color: var(--muted); font-style: italic; }
+
+.tax-section { margin: 1.25rem 0; }
+.tax-section h3 { margin: 0 0 0.5rem; font-size: 1rem; }
+.tax-empty { color: var(--muted); font-style: italic; }
+
+/* Dropzone */
+.tax-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 0.75rem;
+}
+.tax-dropzone.over { border-color: var(--accent); background: rgba(100, 181, 246, 0.08); }
+.tax-dropzone-main { margin: 0; font-size: 0.9rem; }
+.tax-dropzone-hint { margin: 0.25rem 0 0; font-size: 0.74rem; color: var(--muted); }
+.tax-dropzone-msg { margin: 0.4rem 0 0; font-size: 0.78rem; color: var(--accent); }
+
+/* Document list — shared grid for header + rows */
+.tax-doc-list { font-size: 0.82rem; }
+.tax-doc-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1.6fr) 5rem 5rem 3.2rem 4rem minmax(8rem, 1fr) 1.6rem;
+  align-items: center;
+  column-gap: 0.5rem;
+  padding: 0.35rem 0.3rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.tax-doc-row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tax-doc-row.selected { background: rgba(100, 181, 246, 0.12); }
+.tax-doc-head {
+  cursor: default;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+.tax-doc-name { font-weight: 600; }
+.tax-form { font-size: 0.74rem; }
+.tax-form-unknown { color: var(--muted); font-style: italic; }
+.tax-stage {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  text-align: center;
+}
+.tax-stage-ingested { color: #64b5f6; border-color: #64b5f6; }
+.tax-stage-verified { color: #4caf50; border-color: #4caf50; }
+.tax-stage-error { color: var(--accent); border-color: var(--accent); }
+.tax-doc-kind, .tax-doc-size, .tax-doc-date { color: var(--muted); font-size: 0.76rem; }
+.tax-doc-del {
+  border: none; background: transparent; color: var(--accent);
+  font-size: 1.1rem; cursor: pointer; line-height: 1; padding: 0;
+}
+
+/* Viewer */
+.tax-viewer { margin-top: 0.5rem; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.tax-viewer-empty { padding: 2rem; text-align: center; color: var(--muted); }
+.tax-viewer-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.8rem;
+}
+.tax-viewer-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tax-viewer-open { font-size: 0.76rem; color: var(--accent); }
+.tax-viewer-frame { width: 100%; height: 70vh; border: none; background: #fff; }
+.tax-viewer-img { width: 100%; max-height: 70vh; object-fit: contain; display: block; background: #fff; }

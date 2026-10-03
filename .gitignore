@@ -41,6 +41,13 @@ backend/txn_data/
 backend/console_history.log
 backend/plaid_actuals.json
 
+# Tax Prep documents + extraction/db artifacts (real tax data — never commit).
+# Originals live under backend/txn_data/tax/ (already ignored above); these cover
+# the spec's additional/future locations.
+data/tax/
+tax_documents/
+*.tax.db
+
 # Plaid pipeline — never commit transaction data, encrypted store, or intermediates
 plaid_pipeline/data/
 plaid_pipeline/*.parquet

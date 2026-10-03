@@ -80,6 +80,17 @@ const initialState: CalculateRequest = {
     timelines: [],
     adjustments: [],
   },
+  timeline_scenarios: [
+    {
+      name: "Base",
+      plan: {
+        settings: { starting_leftover: 0, carry_over_leftover: false, horizon_years: 10 },
+        timelines: [],
+        adjustments: [],
+      },
+    },
+  ],
+  active_scenario: 0,
 };
 
 type Action =
@@ -100,12 +111,26 @@ function reducer(state: CalculateRequest, action: Action): CalculateRequest {
       };
     case "SET_SECTION":
       return { ...state, [action.section]: action.value };
-    case "LOAD":
+    case "LOAD": {
       // Backfill timeline_plan for profiles saved before the Timeline feature.
+      const plan = action.data.timeline_plan ?? initialState.timeline_plan;
+      // Backfill scenarios: profiles saved before the scenario feature have a
+      // single timeline_plan; wrap it as one "Base" scenario. Keep timeline_plan
+      // mirrored to the active scenario's plan (the backend reads timeline_plan).
+      let scenarios = action.data.timeline_scenarios;
+      let active = action.data.active_scenario ?? 0;
+      if (!scenarios || scenarios.length === 0) {
+        scenarios = [{ name: "Base", plan }];
+        active = 0;
+      }
+      if (active < 0 || active >= scenarios.length) active = 0;
       return {
         ...action.data,
-        timeline_plan: action.data.timeline_plan ?? initialState.timeline_plan,
+        timeline_scenarios: scenarios,
+        active_scenario: active,
+        timeline_plan: scenarios[active].plan,
       };
+    }
     case "RESET":
       return initialState;
     default:

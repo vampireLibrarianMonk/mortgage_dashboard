@@ -209,6 +209,13 @@ class TimelinePlan(BaseModel):
     adjustments: list[Adjustment] = []
 
 
+class TimelineScenario(BaseModel):
+    """A named timeline plan the user tabs between. The active scenario's plan is
+    mirrored into CalculateRequest.timeline_plan, which the projection reads."""
+    name: str = "Base"
+    plan: TimelinePlan = TimelinePlan()
+
+
 class CalculateRequest(BaseModel):
     house_purchase: HousePurchase
     loan_terms: LoanTerms
@@ -228,7 +235,13 @@ class CalculateRequest(BaseModel):
     # calculations.py. List rows carry their own classification field instead.
     classifications: dict[str, str] = {}
     # Timeline Builder state (optional; drives the forward-looking runway projection).
+    # timeline_plan is the ACTIVE scenario's plan — the projection reads it directly.
     timeline_plan: TimelinePlan = TimelinePlan()
+    # Named scenarios the user tabs between (per-profile). timeline_plan mirrors
+    # timeline_scenarios[active_scenario].plan; these persist but don't affect the
+    # projection (which uses timeline_plan). Optional for back-compat.
+    timeline_scenarios: list[TimelineScenario] = []
+    active_scenario: int = 0
 
 
 class CalculateResponse(BaseModel):

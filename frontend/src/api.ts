@@ -1,4 +1,4 @@
-import type { CalculateRequest, CalculateResponse } from "./types";
+import type { CalculateRequest, CalculateResponse, TaxDocument } from "./types";
 
 // In dev, Vite proxies /calculate and /profiles to the backend (see vite.config.ts).
 // In production, FastAPI serves this built app, so same-origin relative paths work
@@ -292,4 +292,63 @@ export async function balancesRefresh(): Promise<BalanceSnapshotAccount[]> {
   if (!res.ok) throw new Error(`balances-refresh failed: ${res.status}`);
   const data = await res.json();
   return (data.accounts ?? []) as BalanceSnapshotAccount[];
+}
+
+// --- Tax Prep (Phase 1: document foundation — upload/list/view/delete) ---
+
+export interface TaxUploadResult {
+  ok: boolean;
+  created?: boolean;
+  document?: TaxDocument;
+  error?: string;
+}
+
+export interface TaxPreviewResult {
+  ok: boolean;
+  filename?: string;
+  kind?: string;
+  size_bytes?: number;
+  id?: string;
+  duplicate?: boolean;
+  error?: string;
+}
+
+export async function taxListDocuments(year: number): Promise<TaxDocument[]> {
+  const res = await fetch(`${API_BASE}/tax/${year}/documents`);
+  if (!res.ok) throw new Error(`tax list failed: ${res.status}`);
+  const data = await res.json();
+  return (data.documents ?? []) as TaxDocument[];
+}
+
+export async function taxPreviewDocument(year: number, file: File): Promise<TaxPreviewResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/tax/${year}/documents/preview`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`tax preview failed: ${res.status}`);
+  return res.json();
+}
+
+export async function taxUploadDocument(year: number, file: File): Promise<TaxUploadResult> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${API_BASE}/tax/${year}/documents`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw new Error(`tax upload failed: ${res.status}`);
+  return res.json();
+}
+
+export async function taxDeleteDocument(year: number, id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/tax/${year}/documents/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`tax delete failed: ${res.status}`);
+}
+
+// URL for the in-app viewer (original bytes, inline). Not fetched here — passed
+// to an <img>/<iframe> src.
+export function taxDocumentRawUrl(year: number, id: string): string {
+  return `${API_BASE}/tax/${year}/documents/${id}/raw`;
 }

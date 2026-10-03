@@ -39,6 +39,7 @@ ignore = ["E501"]
 # FastAPI route signatures use `= File(...)` in defaults by design (B008 is a
 # known false positive for FastAPI's dependency-injection markers).
 "**/console_routes.py" = ["B008"]
+"**/tax/routes.py" = ["B008"]
 # The content-sniffing reader dispatch intentionally swallows a misbehaving
 # reader's exception and tries the next one (S112) - a logged failure here would
 # be noise and must not break dispatch.

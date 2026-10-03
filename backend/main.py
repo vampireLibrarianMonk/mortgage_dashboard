@@ -11,6 +11,7 @@ from calculations import calculate
 from console_routes import router as console_router
 from models import CalculateRequest, CalculateResponse
 from plaid_routes import router as plaid_router
+from tax.routes import router as tax_router
 
 app = FastAPI(title="Mortgage Dashboard API")
 
@@ -27,6 +28,7 @@ app.add_middleware(
 
 app.include_router(plaid_router)
 app.include_router(console_router)
+app.include_router(tax_router)
 
 
 @app.post("/calculate", response_model=CalculateResponse)
@@ -85,15 +87,17 @@ def system_refresh():
     Best-effort: if the script or PowerShell isn't available (e.g. non-Windows dev
     box), report that cleanly rather than erroring.
     """
-    import subprocess
+    import subprocess  # nosec B404 - fixed local deploy script, no shell, no user input
     from pathlib import Path
 
     script = Path(__file__).resolve().parent.parent / "deploy" / "health-check.ps1"
     if not script.is_file():
         return {"ok": False, "output": [f"health-check.ps1 not found at {script}"]}
     try:
-        proc = subprocess.run(  # noqa: S603 - fixed script path, no user input
-            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",
+        # Launches a fixed, in-repo PowerShell script with a constant argument
+        # list (no shell, no user-controlled input).
+        proc = subprocess.run(  # noqa: S603  # nosec B603 B607
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass",  # noqa: S607
              "-File", str(script)],
             capture_output=True, text=True, timeout=60,
         )

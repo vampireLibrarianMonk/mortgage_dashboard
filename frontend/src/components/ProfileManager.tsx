@@ -80,6 +80,17 @@ const defaults: CalculateRequest = {
     timelines: [],
     adjustments: [],
   },
+  timeline_scenarios: [
+    {
+      name: "Base",
+      plan: {
+        settings: { starting_leftover: 0, carry_over_leftover: false, horizon_years: 10 },
+        timelines: [],
+        adjustments: [],
+      },
+    },
+  ],
+  active_scenario: 0,
 };
 
 /**
@@ -143,7 +154,19 @@ function normalizeLegacyShape(data: Record<string, unknown>): Record<string, unk
 function migrateProfile(raw: Record<string, unknown>): CalculateRequest {
   const data = normalizeLegacyShape(raw);
   const result = { ...defaults };
+  // Scenario fields are handled by the LOAD reducer's migration (which wraps a
+  // legacy single timeline_plan into a "Base" scenario). Do NOT seed them from
+  // defaults here: an empty default "Base" would otherwise override a legacy
+  // profile's real timeline_plan, making the loaded timeline look blank.
+  const scenarioKeys = new Set(["timeline_scenarios", "active_scenario"]);
   for (const key of Object.keys(defaults) as (keyof CalculateRequest)[]) {
+    if (scenarioKeys.has(key)) {
+      // Pass through only if the saved profile actually has it; else leave
+      // undefined so LOAD migrates from timeline_plan.
+      if (data[key] !== undefined) (result as Record<string, unknown>)[key] = data[key];
+      else delete (result as Record<string, unknown>)[key];
+      continue;
+    }
     if (data[key] !== undefined) {
       if (Array.isArray(defaults[key])) {
         (result as Record<string, unknown>)[key] = data[key];
