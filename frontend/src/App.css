@@ -1353,6 +1353,8 @@ h4 {
   text-align: center;
 }
 .tax-stage-ingested { color: #64b5f6; border-color: #64b5f6; }
+.tax-stage-classified { color: #9575cd; border-color: #9575cd; }
+.tax-stage-extracted { color: #ffb74d; border-color: #ffb74d; }
 .tax-stage-verified { color: #4caf50; border-color: #4caf50; }
 .tax-stage-error { color: var(--accent); border-color: var(--accent); }
 .tax-doc-kind, .tax-doc-size, .tax-doc-date { color: var(--muted); font-size: 0.76rem; }
@@ -1372,3 +1374,54 @@ h4 {
 .tax-viewer-open { font-size: 0.76rem; color: var(--accent); }
 .tax-viewer-frame { width: 100%; height: 70vh; border: none; background: #fff; }
 .tax-viewer-img { width: 100%; max-height: 70vh; object-fit: contain; display: block; background: #fff; }
+
+/* Extracted facts — Phase 2 review workflow */
+.tax-facts-empty { padding: 1.25rem; text-align: center; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; }
+.tax-facts-actions { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.4rem; }
+.tax-extract-btn {
+  padding: 0.4rem 0.75rem; font-size: 0.82rem; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--panel, #1b1f27);
+  color: inherit; cursor: pointer;
+}
+.tax-extract-btn:disabled { opacity: 0.5; cursor: default; }
+.tax-extract-aws { border-color: #ffb74d; color: #ffb74d; }
+.tax-facts-busy { font-size: 0.78rem; color: var(--muted); font-style: italic; }
+.tax-facts-hint { font-size: 0.74rem; color: var(--muted); margin: 0.2rem 0 0.6rem; }
+.tax-facts-note { font-size: 0.8rem; color: #ffb74d; margin: 0.3rem 0; }
+.tax-facts-error { font-size: 0.8rem; color: var(--accent); margin: 0.3rem 0; }
+
+.tax-facts-table { font-size: 0.82rem; }
+.tax-fact-row {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1.8fr) minmax(6rem, 1.1fr) 4.5rem minmax(7rem, 1fr) 6rem 3.6rem;
+  align-items: center;
+  column-gap: 0.5rem;
+  padding: 0.35rem 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+.tax-fact-row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tax-fact-head {
+  font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--muted);
+}
+.tax-fact-label { font-weight: 600; }
+.tax-fact-value { font-variant-numeric: tabular-nums; }
+.tax-fact-input { width: 100%; padding: 0.15rem 0.3rem; font-size: 0.8rem; }
+.tax-conf {
+  font-size: 0.72rem; text-align: center; padding: 0.05rem 0.3rem;
+  border-radius: 3px; border: 1px solid var(--border);
+}
+.tax-conf-ok { color: #4caf50; border-color: #4caf50; }
+.tax-conf-low { color: #ffb74d; border-color: #ffb74d; }
+.tax-fact-source { color: var(--muted); font-size: 0.72rem; }
+.tax-fact-status { font-size: 0.7rem; color: var(--muted); }
+.tax-fact-status-needs_review { color: #ffb74d; }
+.tax-fact-status-verified { color: #4caf50; }
+.tax-fact-status-corrected { color: #64b5f6; }
+.tax-fact-ops { display: flex; gap: 0.35rem; }
+.tax-fact-op {
+  border: 1px solid var(--border); background: transparent; color: inherit;
+  border-radius: 4px; cursor: pointer; font-size: 0.74rem; padding: 0.1rem 0.3rem;
+}
+.tax-fact-op:disabled { opacity: 0.5; cursor: default; }
+.tax-fact-op-cancel { color: var(--muted); }

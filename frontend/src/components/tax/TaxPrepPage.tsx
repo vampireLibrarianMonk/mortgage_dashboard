@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { taxDeleteDocument, taxListDocuments } from "../../api";
 import type { TaxDocument } from "../../types";
+import ExtractedFacts from "./ExtractedFacts";
 import TaxDocumentList from "./TaxDocumentList";
 import TaxDocumentUpload from "./TaxDocumentUpload";
 import TaxDocumentViewer from "./TaxDocumentViewer";
@@ -14,11 +15,12 @@ interface Props {
 const YEARS = [2026, 2025, 2024, 2023];
 
 /**
- * Tax Prep — Phase 1 (document foundation). Upload tax documents (scanned
- * images, digital or flattened PDFs), stored immutably with SHA-256 identity,
- * and view the originals. Extraction, the federal/Virginia tax picture, and the
- * AI assistant are later phases (see new_spec/tax_prep_tab_design.md) and are
- * shown here as honest placeholders — no numbers are computed yet.
+ * Tax Prep. Upload tax documents (scanned images, digital or flattened PDFs),
+ * stored immutably with SHA-256 identity, view the originals, and — Phase 2 —
+ * extract and review a W-2's boxes into provenance-carrying facts (local or AWS
+ * Textract, PII masked). The federal/Virginia tax picture and the AI assistant
+ * are later phases (see new_spec/tax_prep_tab_design.md) and are shown here as
+ * honest placeholders — no tax owed is computed yet.
  */
 export default function TaxPrepPage({ year, onYearChange }: Props) {
   const [docs, setDocs] = useState<TaxDocument[]>([]);
@@ -28,7 +30,12 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
   const refresh = useCallback(() => {
     setLoading(true);
     taxListDocuments(year)
-      .then(setDocs)
+      .then((list) => {
+        setDocs(list);
+        // Keep the selected document's metadata (stage/form_type) in sync after
+        // an extraction or verification changed it.
+        setSelected((cur) => (cur ? (list.find((d) => d.id === cur.id) ?? cur) : cur));
+      })
       .catch(() => setDocs([]))
       .finally(() => setLoading(false));
   }, [year]);
@@ -62,9 +69,9 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
         </div>
         <p className="section-hint">
           Upload your household's tax documents and keep the originals in one place.
-          This is <strong>Phase 1 — document foundation</strong>: files are stored
-          immutably and listed below. Reading the forms and showing what you owe
-          federally and in Virginia comes in later phases.
+          Documents are stored immutably; a W-2 can be read into reviewable facts
+          (box values with confidence and source, PII masked). Showing what you owe
+          federally and in Virginia comes in a later phase — no tax is computed yet.
         </p>
       </div>
 
@@ -95,6 +102,11 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
             onDelete={handleDelete}
           />
         )}
+      </section>
+
+      <section className="tax-section">
+        <h3>Extracted facts</h3>
+        <ExtractedFacts year={year} doc={selected} onChanged={refresh} />
       </section>
 
       <section className="tax-section">

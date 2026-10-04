@@ -19,7 +19,7 @@ import hashlib
 from pathlib import Path
 
 import txn_store as ts  # reuse DATA_DIR + Fernet _read_enc/_write_enc
-from tax.models import DocKind, DocStage, TaxDocument
+from tax.models import DocKind, DocStage, TaxDocument, TaxFact
 
 TAX_ROOT = ts.DATA_DIR / "tax"
 
@@ -151,7 +151,8 @@ def read_original(tax_year: int, doc_id: str) -> tuple[bytes, DocKind] | None:
 
 
 def delete_document(tax_year: int, doc_id: str) -> bool:
-    """Remove a document's index entry and its original file. True if it existed."""
+    """Remove a document's index entry, its original file, and its facts. True if
+    it existed."""
     index = _load_index(tax_year)
     rec = index.pop(doc_id, None)
     if rec is None:
@@ -160,4 +161,74 @@ def delete_document(tax_year: int, doc_id: str) -> bool:
     path = _original_file(tax_year, doc_id, doc.kind)
     path.unlink(missing_ok=True)
     _save_index(tax_year, index)
+    # Drop any extracted facts for this document too.
+    facts = _load_facts_index(tax_year)
+    if facts.pop(doc_id, None) is not None:
+        _save_facts_index(tax_year, facts)
     return True
+
+
+def update_document(tax_year: int, doc_id: str, **patch) -> TaxDocument | None:
+    """Patch fields on a stored TaxDocument (e.g. stage, form_type, taxpayer)."""
+    index = _load_index(tax_year)
+    rec = index.get(doc_id)
+    if rec is None:
+        return None
+    rec.update(patch)
+    doc = TaxDocument(**rec)  # validate
+    index[doc_id] = doc.model_dump()
+    _save_index(tax_year, index)
+    return doc
+
+
+# --- Extracted facts (per year, keyed by document id) -------------------------
+
+def _facts_path(tax_year: int) -> Path:
+    return _year_dir(tax_year) / "facts.json.enc"
+
+
+def _load_facts_index(tax_year: int) -> dict:
+    """Map of doc_id -> list[TaxFact dict] for one year. {} when none."""
+    return ts._read_enc(_facts_path(tax_year), {})
+
+
+def _save_facts_index(tax_year: int, facts: dict) -> None:
+    _facts_path(tax_year).parent.mkdir(parents=True, exist_ok=True)
+    ts._write_enc(_facts_path(tax_year), facts)
+
+
+def save_facts(tax_year: int, doc_id: str, facts: list[TaxFact]) -> None:
+    """Replace the stored facts for one document (facts are already PII-masked)."""
+    index = _load_facts_index(tax_year)
+    index[doc_id] = [f.model_dump() for f in facts]
+    _save_facts_index(tax_year, index)
+
+
+def load_facts(tax_year: int, doc_id: str) -> list[TaxFact]:
+    return [TaxFact(**f) for f in _load_facts_index(tax_year).get(doc_id, [])]
+
+
+def load_all_facts(tax_year: int) -> dict[str, list[TaxFact]]:
+    index = _load_facts_index(tax_year)
+    return {doc_id: [TaxFact(**f) for f in facts] for doc_id, facts in index.items()}
+
+
+def update_fact(tax_year: int, doc_id: str, field_code: str, patch: dict) -> TaxFact | None:
+    """Patch one fact (by field_code) within a document's fact list. Returns the
+    updated fact, or None if not found."""
+    index = _load_facts_index(tax_year)
+    rows = index.get(doc_id)
+    if not rows:
+        return None
+    updated: TaxFact | None = None
+    for i, row in enumerate(rows):
+        if row.get("field_code") == field_code:
+            row.update(patch)
+            updated = TaxFact(**row)  # validate
+            rows[i] = updated.model_dump()
+            break
+    if updated is None:
+        return None
+    index[doc_id] = rows
+    _save_facts_index(tax_year, index)
+    return updated

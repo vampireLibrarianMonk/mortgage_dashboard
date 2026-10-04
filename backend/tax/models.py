@@ -100,7 +100,10 @@ class TaxFact(BaseModel):
 
     field_code: str
     field_label: str = ""
-    value: str | float | int | None = None
+    # bool must precede int in the union: bool is an int subclass, and Pydantic
+    # would otherwise coerce True -> 1.0. The Box 13 retirement-plan checkbox
+    # relies on staying a real bool.
+    value: bool | str | float | int | None = None
 
     page: int = 1
     bbox: tuple[float, float, float, float] | None = None
@@ -110,8 +113,8 @@ class TaxFact(BaseModel):
     status: FactStatus = FactStatus.extracted
 
     # Audit trail — never overwrite the original extracted value on correction.
-    extracted_value: str | float | int | None = None
-    verified_value: str | float | int | None = None
+    extracted_value: bool | str | float | int | None = None
+    verified_value: bool | str | float | int | None = None
     corrected_by: str | None = None
     corrected_at: str | None = None
     parser_version: str | None = None

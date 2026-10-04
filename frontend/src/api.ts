@@ -1,4 +1,11 @@
-import type { CalculateRequest, CalculateResponse, TaxDocument } from "./types";
+import type {
+  CalculateRequest,
+  CalculateResponse,
+  DocStage,
+  TaxDocument,
+  TaxFact,
+  TaxFormType,
+} from "./types";
 
 // In dev, Vite proxies /calculate and /profiles to the backend (see vite.config.ts).
 // In production, FastAPI serves this built app, so same-origin relative paths work
@@ -351,4 +358,64 @@ export async function taxDeleteDocument(year: number, id: string): Promise<void>
 // to an <img>/<iframe> src.
 export function taxDocumentRawUrl(year: number, id: string): string {
   return `${API_BASE}/tax/${year}/documents/${id}/raw`;
+}
+
+// --- Phase 2: extraction + review ---
+
+export type ExtractionProvider = "local" | "aws";
+
+export interface TaxExtractResult {
+  ok: boolean;
+  provider?: ExtractionProvider;
+  form_type?: TaxFormType;
+  stage?: DocStage;
+  fact_count?: number;
+  facts?: TaxFact[];
+  note?: string;
+  error?: string;
+}
+
+// Run extraction on a stored document. provider 'local' is offline/free (little
+// on scans); 'aws' uses Textract (opt-in). The backend classifies by content
+// and, for a W-2, maps its boxes into facts.
+export async function taxExtract(
+  year: number,
+  id: string,
+  provider: ExtractionProvider,
+): Promise<TaxExtractResult> {
+  const res = await fetch(`${API_BASE}/tax/${year}/documents/${id}/extract`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider }),
+  });
+  if (!res.ok) throw new Error(`tax extract failed: ${res.status}`);
+  return res.json();
+}
+
+export async function taxFacts(year: number, id: string): Promise<TaxFact[]> {
+  const res = await fetch(`${API_BASE}/tax/${year}/documents/${id}/facts`);
+  if (!res.ok) throw new Error(`tax facts failed: ${res.status}`);
+  const data = await res.json();
+  return (data.facts ?? []) as TaxFact[];
+}
+
+// Accept (value omitted/null) or correct (value provided) one fact. The backend
+// preserves the original extracted_value and records an audit trail.
+export async function taxVerifyFact(
+  year: number,
+  id: string,
+  fieldCode: string,
+  value: boolean | string | number | null,
+): Promise<TaxFact | null> {
+  const res = await fetch(
+    `${API_BASE}/tax/${year}/documents/${id}/facts/${fieldCode}/verify`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value }),
+    },
+  );
+  if (!res.ok) throw new Error(`tax verify failed: ${res.status}`);
+  const data = await res.json();
+  return (data.fact ?? null) as TaxFact | null;
 }

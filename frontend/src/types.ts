@@ -321,3 +321,44 @@ export interface TaxDocument {
   page_count: number | null;
   note: string;
 }
+
+// --- Phase 2: extraction + review ---
+
+export type ExtractionMethod =
+  | "acroform"
+  | "native_pdf"
+  | "local_ocr"
+  | "textract"
+  | "manual";
+
+export type FactStatus =
+  | "extracted"
+  | "verified"
+  | "corrected"
+  | "rejected"
+  | "needs_review"
+  | "conflict";
+
+// A single extracted value from a document, with provenance. PII (SSN/EIN) is
+// already masked by the backend at creation — the frontend never sees raw values.
+export interface TaxFact {
+  tax_year: number;
+  document_id: string;
+  form_type: TaxFormType;
+  payer_name: string | null;
+  payer_tin_masked: string | null;
+  taxpayer_name: string | null;
+  field_code: string;
+  field_label: string;
+  value: boolean | string | number | null;
+  page: number;
+  bbox: [number, number, number, number] | null;
+  extraction_method: ExtractionMethod;
+  confidence: number; // 0-1
+  status: FactStatus;
+  extracted_value: boolean | string | number | null;
+  verified_value: boolean | string | number | null;
+  corrected_by: string | null;
+  corrected_at: string | null;
+  parser_version: string | null;
+}
