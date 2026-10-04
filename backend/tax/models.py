@@ -36,6 +36,7 @@ class FormType(str, Enum):
     f3922 = "3922"
     ssa_1099 = "SSA-1099"
     k1 = "K-1"
+    paystub = "Paystub"
     other = "other"
 
 

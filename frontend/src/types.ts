@@ -362,3 +362,52 @@ export interface TaxFact {
   corrected_at: string | null;
   parser_version: string | null;
 }
+
+// --- Phase 3: W-2 ↔ paystub reconciliation ---
+
+export type ReconcileVerdict =
+  | "match"
+  | "explainable_delta"
+  | "mismatch"
+  | "w2_only"
+  | "paystub_only"
+  | "missing";
+
+export interface ReconcileLine {
+  key: string;
+  label: string;
+  w2_value: number | null;
+  paystub_value: number | null;
+  delta: number | null; // paystub - w2 when both present
+  verdict: ReconcileVerdict;
+  note: string;
+}
+
+export interface PersonReconciliation {
+  person: string;
+  employer: string | null;
+  tax_year: number;
+  has_w2: boolean;
+  has_paystubs: boolean;
+  paystubs_complete: boolean;
+  lines: ReconcileLine[];
+  summary: string;
+}
+
+export interface HouseholdTotals {
+  tax_year: number;
+  total_wages: number;
+  total_fed_withheld: number;
+  total_ss_tax: number;
+  total_medicare_tax: number;
+  total_state_withheld: number;
+  people_counted: string[];
+  people_missing_w2: string[];
+}
+
+export interface HouseholdReconciliation {
+  tax_year: number;
+  people: PersonReconciliation[];
+  totals: HouseholdTotals;
+  summary: string;
+}

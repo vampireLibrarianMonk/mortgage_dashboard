@@ -2,6 +2,7 @@ import type {
   CalculateRequest,
   CalculateResponse,
   DocStage,
+  HouseholdReconciliation,
   TaxDocument,
   TaxFact,
   TaxFormType,
@@ -418,4 +419,21 @@ export async function taxVerifyFact(
   if (!res.ok) throw new Error(`tax verify failed: ${res.status}`);
   const data = await res.json();
   return (data.fact ?? null) as TaxFact | null;
+}
+
+// --- Phase 3: household W-2 ↔ paystub reconciliation ---
+
+export interface TaxReconcileResult {
+  ok: boolean;
+  reconciliation: HouseholdReconciliation | null;
+  note?: string;
+}
+
+// Reconcile the whole household for a year: each person's W-2 cross-checked
+// against their paystub-rebuilt totals, plus a household W-2 rollup. Computed
+// on demand from already-extracted documents.
+export async function taxReconcile(year: number): Promise<TaxReconcileResult> {
+  const res = await fetch(`${API_BASE}/tax/${year}/reconcile`);
+  if (!res.ok) throw new Error(`tax reconcile failed: ${res.status}`);
+  return res.json();
 }

@@ -9,9 +9,9 @@ from __future__ import annotations
 import io
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from tax.extraction.images import NoPageImage, to_image_bytes
+from tax.extraction.images import NoPageImage, iter_page_images
 from tax.models import DocKind
 
 # Extraction mode default. Local = offline/free (little on scans); aws = Textract.
@@ -101,15 +101,29 @@ class TextractProvider(ExtractionProvider):
 
     def extract(self, data: bytes, kind: DocKind) -> list[ExtractedKV]:
         try:
-            image = to_image_bytes(data, kind)
+            pages = list(iter_page_images(data, kind))
         except NoPageImage:
             return []  # no raster to send; local path should handle it
 
         import boto3
 
         client = boto3.client("textract", region_name=self.region)
-        resp = client.analyze_document(Document={"Bytes": image}, FeatureTypes=["FORMS"])
-        return _parse_textract(resp)
+
+        # A multi-page scan (e.g. a W-2 with a "Notice to Employee" page before
+        # the form) means the useful page isn't always the first. Analyze each
+        # page and keep the one with the most key/value pairs — the actual form.
+        best: list[ExtractedKV] = []
+        for image in pages:
+            try:
+                resp = client.analyze_document(
+                    Document={"Bytes": image}, FeatureTypes=["FORMS"]
+                )
+            except Exception:  # one bad page shouldn't fail the whole document
+                continue
+            kvs = _parse_textract(resp)
+            if len(kvs) > len(best):
+                best = kvs
+        return best
 
 
 def _parse_textract(resp: dict) -> list[ExtractedKV]:

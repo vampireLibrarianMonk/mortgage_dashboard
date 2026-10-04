@@ -26,6 +26,27 @@ def classify_form(kvs: list[ExtractedKV]) -> FormType:
     if not text.strip():
         return FormType.unknown
 
+    # Paystub (pay statement). Check BEFORE W-2: a stub also mentions wages and
+    # withholding, so match it on its own distinctive earnings-statement markers.
+    # Guard against a W-2 by requiring the pay-period/net-pay cadence a stub has
+    # and a W-2 does not.
+    paystub_markers = sum(
+        marker in text
+        for marker in (
+            "pay period",
+            "pay frequency",
+            "net pay",
+            "deposit advice",
+            "pay date",
+            "ytd",
+            "pre-tax deductions",
+            "earnings statement",
+            "pay statement",
+        )
+    )
+    if paystub_markers >= 2 and "wage and tax statement" not in text:
+        return FormType.paystub
+
     # Strong signals: the form's own title / designation.
     if "wage and tax statement" in text or "w-2" in text or "w2" in text:
         return FormType.w2

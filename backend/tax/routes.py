@@ -22,8 +22,10 @@ from fastapi.responses import Response
 from tax import storage
 from tax.classify import classify_form
 from tax.extraction.providers import get_provider
+from tax.forms.paystub import extract_paystub_facts, parse_paystub, rebuild_year
 from tax.forms.w2 import extract_w2_facts
 from tax.models import DocStage, ExtractionMethod, FactStatus, FormType
+from tax.reconcile import reconcile_household
 from tax.storage import UnsupportedDocument
 
 router = APIRouter(prefix="/tax", tags=["tax"])
@@ -154,11 +156,20 @@ def extract_document(
 
     form_type = classify_form(kvs)
     note = ""
+    method = _METHOD_FOR_PROVIDER.get(choice, ExtractionMethod.manual)
 
     facts: list = []
+    taxpayer: str | None = None
     if form_type is FormType.w2:
-        facts = extract_w2_facts(
-            doc_id, year, kvs, method=_METHOD_FOR_PROVIDER.get(choice, ExtractionMethod.manual)
+        facts = extract_w2_facts(doc_id, year, kvs, method=method)
+        taxpayer = _person_from_name(_fact_name(facts)) or _person_from_filename(
+            doc.original_filename
+        )
+    elif form_type is FormType.paystub:
+        facts = extract_paystub_facts(doc_id, year, kvs, method=method)
+        reading = parse_paystub(kvs)
+        taxpayer = _person_from_name(reading.employee_name) or _person_from_filename(
+            doc.original_filename
         )
 
     if facts:
@@ -175,17 +186,21 @@ def extract_document(
             "like a scanned document. Enable AWS Textract to read its boxes."
         )
     elif form_type is FormType.unknown and kvs:
-        note = "Content did not match a supported form type (only W-2 so far)."
+        note = "Content did not match a supported form type (W-2 / paystub so far)."
     elif form_type is FormType.w2 and not facts:
         note = "Classified as W-2 but no boxes could be mapped from the content."
 
-    storage.update_document(year, doc_id, stage=stage, form_type=form_type, note=note)
+    patch = {"stage": stage, "form_type": form_type, "note": note}
+    if taxpayer:
+        patch["taxpayer"] = taxpayer
+    storage.update_document(year, doc_id, **patch)
 
     return {
         "ok": True,
         "provider": choice,
         "form_type": form_type.value,
         "stage": stage.value,
+        "taxpayer": taxpayer,
         "fact_count": len(facts),
         "facts": [f.model_dump() for f in facts],
         "note": note,
@@ -243,3 +258,125 @@ def verify_fact(
         storage.update_document(year, doc_id, stage=DocStage.verified)
 
     return {"ok": True, "fact": updated.model_dump()}
+
+
+# --- Person attribution + household reconciliation ----------------------------
+
+def _fact_name(facts: list) -> str | None:
+    """The employee/taxpayer name carried on a document's facts, if any."""
+    for f in facts:
+        name = getattr(f, "taxpayer_name", None)
+        if name:
+            return name
+        # W-2 facts stash the name as the employee_name field's value.
+        if getattr(f, "field_code", "") == "employee_name" and f.value:
+            return str(f.value)
+    return None
+
+
+def _person_from_name(name: str | None) -> str | None:
+    """Normalize a full name to a stable household key (the first name).
+
+    Keeps attribution robust across documents where the name is formatted
+    differently (e.g. "SARA FLANIGAN 4005 ANCIENT OAK CT ..." from a W-2 vs
+    "Patrick Flanigan" from a paystub)."""
+    if not name:
+        return None
+    first = name.strip().split()[0] if name.strip() else ""
+    return first.title() or None
+
+
+# Known household members, matched case-insensitively against a filename as a
+# fallback when a document's own text didn't yield a clean name (W-2 scans often
+# format the employee name unpredictably, and the name is PII we avoid parsing
+# aggressively). Filenames in the corpus are explicit, e.g.
+# "W2_Patrick_Booz_Allen_2025_Copy_B.pdf".
+_HOUSEHOLD_NAMES = ("Patrick", "Sara")
+
+
+def _person_from_filename(filename: str | None) -> str | None:
+    if not filename:
+        return None
+    low = filename.lower()
+    for name in _HOUSEHOLD_NAMES:
+        if name.lower() in low:
+            return name
+    return None
+
+
+def _paystub_readings_for(year: int, person: str):
+    """Parse every stored paystub attributable to `person`, pulling in the next
+    year's documents too so a December period paid in January still routes to
+    the right W-2 year (the rebuild filters by pay date)."""
+    readings = []
+    for y in (year, year + 1):
+        for doc in storage.list_documents(y):
+            if doc.form_type is not FormType.paystub:
+                continue
+            doc_person = _person_from_name(doc.taxpayer) or _person_from_filename(
+                doc.original_filename
+            )
+            if doc_person not in (person, None):
+                continue
+            res = storage.read_original(y, doc.id)
+            if res is None:
+                continue
+            data, kind = res
+            try:
+                kvs = get_provider("local").extract(data, kind)
+            except Exception:  # one unreadable stub must not fail reconciliation
+                continue
+            reading = parse_paystub(kvs)
+            # Guard attribution when the doc wasn't tagged: match on the name.
+            if doc.taxpayer is None and _person_from_name(reading.employee_name) != person:
+                continue
+            readings.append(reading)
+    return readings
+
+
+@router.get("/{year}/reconcile")
+def household_reconcile(year: int):
+    """W-2 ↔ paystub reconciliation for the whole household in one year.
+
+    Gathers every person who has a W-2 and/or paystubs (from already-extracted
+    documents), rebuilds each person's full-year paystub totals on a pay-date
+    basis, reconciles against their W-2, and rolls the W-2 figures into a
+    household total. Nothing is computed that isn't backed by a document.
+    """
+    # Collect people from W-2 and paystub documents' attribution.
+    people: set[str] = set()
+    w2_facts_by_person: dict[str, list] = {}
+
+    for doc in storage.list_documents(year):
+        person = _person_from_name(doc.taxpayer) or _person_from_filename(doc.original_filename)
+        if doc.form_type is FormType.w2:
+            facts = storage.load_facts(year, doc.id)
+            if person is None:
+                person = _person_from_name(_fact_name(facts))
+            if person:
+                people.add(person)
+                # Keep the richest W-2 if a person has multiple copies.
+                prior = w2_facts_by_person.get(person, [])
+                if len(facts) > len(prior):
+                    w2_facts_by_person[person] = facts
+        elif doc.form_type is FormType.paystub and person:
+            people.add(person)
+
+    if not people:
+        return {
+            "ok": True,
+            "reconciliation": None,
+            "note": (
+                "No extracted W-2 or paystub documents yet. Upload and extract "
+                "them first, then run reconciliation."
+            ),
+        }
+
+    per_person: dict[str, tuple] = {}
+    for person in people:
+        readings = _paystub_readings_for(year, person)
+        rebuild = rebuild_year(readings, year) if readings else None
+        per_person[person] = (w2_facts_by_person.get(person), rebuild)
+
+    household = reconcile_household(year, per_person)
+    return {"ok": True, "reconciliation": household.model_dump()}

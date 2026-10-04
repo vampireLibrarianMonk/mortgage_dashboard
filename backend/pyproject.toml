@@ -39,7 +39,15 @@ ignore = ["E501"]
 # FastAPI route signatures use `= File(...)` in defaults by design (B008 is a
 # known false positive for FastAPI's dependency-injection markers).
 "**/console_routes.py" = ["B008"]
-"**/tax/routes.py" = ["B008"]
+# tax/routes.py: B008 (FastAPI File/Body defaults) + S112 (the reconcile loop
+# deliberately skips an unreadable paystub so one bad file can't fail the batch).
+"**/tax/routes.py" = ["B008", "S112"]
+# The extraction provider intentionally swallows per-reader/per-page failures so
+# one bad field (S110) or one bad PDF page (S112) never breaks a whole document.
+"**/tax/extraction/providers.py" = ["S110", "S112"]
+# The image helper skips a non-decodable embedded image and tries the next one
+# (S112) rather than failing the whole page/document.
+"**/tax/extraction/images.py" = ["S112"]
 # The content-sniffing reader dispatch intentionally swallows a misbehaving
 # reader's exception and tries the next one (S112) - a logged failure here would
 # be noise and must not break dispatch.

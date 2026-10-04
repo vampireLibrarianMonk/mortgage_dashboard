@@ -5,6 +5,7 @@ import ExtractedFacts from "./ExtractedFacts";
 import TaxDocumentList from "./TaxDocumentList";
 import TaxDocumentUpload from "./TaxDocumentUpload";
 import TaxDocumentViewer from "./TaxDocumentViewer";
+import TaxReconciliation from "./TaxReconciliation";
 
 interface Props {
   year: number;
@@ -102,6 +103,11 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
             onDelete={handleDelete}
           />
         )}
+      </section>
+
+      <section className="tax-section">
+        <h3>Household reconciliation</h3>
+        <TaxReconciliation year={year} />
       </section>
 
       <section className="tax-section">

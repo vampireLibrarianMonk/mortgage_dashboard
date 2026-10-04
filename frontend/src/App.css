@@ -1425,3 +1425,56 @@ h4 {
 }
 .tax-fact-op:disabled { opacity: 0.5; cursor: default; }
 .tax-fact-op-cancel { color: var(--muted); }
+
+/* Household reconciliation — Phase 3 */
+.recon-actions { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
+.recon-run {
+  padding: 0.4rem 0.9rem; font-size: 0.85rem; border-radius: 6px;
+  border: 1px solid #4caf50; background: transparent; color: #4caf50; cursor: pointer;
+}
+.recon-run:disabled { opacity: 0.5; cursor: default; }
+.recon-hint { font-size: 0.74rem; color: var(--muted); }
+.recon-error { font-size: 0.8rem; color: var(--accent); }
+.recon-summary { font-size: 0.85rem; margin: 0.5rem 0; }
+
+.recon-household { border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin: 0.75rem 0; }
+.recon-household h4 { margin: 0 0 0.6rem; font-size: 0.9rem; }
+.recon-tiles { display: flex; gap: 1rem; flex-wrap: wrap; }
+.recon-tile {
+  flex: 1 1 10rem; border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.6rem 0.8rem; display: flex; flex-direction: column; gap: 0.2rem;
+}
+.recon-tile-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.recon-tile-value { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.recon-missing { font-size: 0.78rem; color: #ffb74d; margin: 0.6rem 0 0; }
+.recon-disclaimer { font-size: 0.74rem; color: var(--muted); font-style: italic; margin: 0.6rem 0 0; }
+
+.recon-people { display: flex; flex-direction: column; gap: 1rem; margin-top: 0.75rem; }
+.recon-person { border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem; }
+.recon-person-head { display: flex; align-items: baseline; gap: 0.6rem; }
+.recon-person-name { font-weight: 700; font-size: 0.95rem; }
+.recon-person-emp { font-size: 0.76rem; color: var(--muted); }
+.recon-person-summary { font-size: 0.78rem; color: var(--muted); margin: 0.3rem 0 0.6rem; }
+
+.recon-table { font-size: 0.82rem; }
+.recon-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.4fr) 7rem 7rem 6rem 6rem;
+  align-items: center; column-gap: 0.5rem;
+  padding: 0.3rem 0.2rem; border-bottom: 1px solid var(--border);
+}
+.recon-row > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recon-head { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+.recon-label { font-weight: 600; }
+.recon-num { text-align: right; font-variant-numeric: tabular-nums; }
+.recon-delta { color: var(--muted); }
+.recon-verdict {
+  font-size: 0.68rem; text-align: center; padding: 0.05rem 0.35rem;
+  border-radius: 3px; border: 1px solid var(--border); justify-self: start;
+}
+.recon-verdict-match { color: #4caf50; border-color: #4caf50; }
+.recon-verdict-explainable_delta { color: #64b5f6; border-color: #64b5f6; }
+.recon-verdict-mismatch { color: var(--accent); border-color: var(--accent); }
+.recon-verdict-w2_only,
+.recon-verdict-paystub_only,
+.recon-verdict-missing { color: var(--muted); border-color: var(--border); }
