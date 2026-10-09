@@ -567,6 +567,47 @@ h4 {
 .bva-row dd.negative { color: var(--accent); }
 .bva-row dd.positive { color: #4caf50; }
 
+/* Initial House Repair card */
+.ihr-total {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #4caf50;
+  padding: 0 0.5rem;
+  white-space: nowrap;
+}
+.ihr-note {
+  margin: 0.1rem 0 0.4rem;
+}
+.ihr-grid {
+  display: block;
+  font-size: 0.82rem;
+  margin: 0;
+}
+.ihr-head, .ihr-row {
+  display: grid;
+  grid-template-columns: 6rem 1fr 7rem;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+.ihr-head {
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  color: var(--muted);
+}
+.ihr-head dt, .ihr-head dd, .ihr-row dt, .ihr-row dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ihr-row dd.ihr-amt { text-align: right; font-variant-numeric: tabular-nums; }
+.ihr-head dd:last-child { text-align: right; }
+.ihr-footer {
+  border-top: 1px solid var(--border);
+  font-weight: 700;
+  margin-top: 0.2rem;
+}
+
 /* Discretionary summary */
 .section-hint {
   font-size: 0.78rem;

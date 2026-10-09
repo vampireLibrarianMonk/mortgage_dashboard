@@ -1,5 +1,6 @@
 import AmortizationChart from "./AmortizationChart";
 import BudgetVsActual from "./BudgetVsActual";
+import InitialHouseRepair from "./InitialHouseRepair";
 import type { CalculateResponse, PurchaseMode, DiscretionaryRow } from "../../types";
 
 interface Props {
@@ -82,6 +83,8 @@ export default function ResultsPanel({ result, purchaseMode, discretionary }: Pr
       </section>
 
       <BudgetVsActual result={r} />
+
+      <InitialHouseRepair />
 
       {discretionaryRanked.length > 0 && (
         <section className="discretionary-summary">

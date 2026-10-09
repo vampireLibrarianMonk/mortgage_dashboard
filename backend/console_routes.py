@@ -33,7 +33,12 @@ from pydantic import BaseModel
 import balances_store
 import credential_store as store
 import txn_store as ts
-from actuals import BUDGET_CATEGORIES, UNBUDGETED, export_actuals
+from actuals import (
+    BUDGET_CATEGORIES,
+    INITIAL_HOUSE_REPAIR,
+    UNBUDGETED,
+    export_actuals,
+)
 from plaid_client import PlaidConfigError, build_client, credentials_available, get_plaid_env
 
 router = APIRouter(prefix="/console", tags=["console"])
@@ -109,19 +114,29 @@ def _cmd_categories(_args) -> list[str]:
             counts[t.get("category", "Uncategorized")] += 1
 
     def fmt(names: list[str]) -> list[str]:
-        return [f"  {n:<18} {counts.get(n, 0):>4}" for n in names]
+        return [f"  {n:<22} {counts.get(n, 0):>4}" for n in names]
+
+    # "Initial House Repair" is excluded from the budget like the special buckets,
+    # but unlike them it carries its own tracked running total (see actuals.py),
+    # so it gets its own group rather than being lumped with Ignore/Transfer.
+    tracked_excluded = ["Initial House Repair"]
 
     # Extended (non-budget) spending categories = everything the store knows that
     # isn't one of the 7 budget cats or a tracking-only/special bucket.
     special = set(UNBUDGETED) | {
         "Split", "Rewards", "Income", "Ignore", "Review", "Reference", "Uncategorized",
     }
-    extended = [c for c in ts.CATEGORIES if c not in BUDGET_CATEGORIES and c not in special]
+    extended = [
+        c for c in ts.CATEGORIES
+        if c not in BUDGET_CATEGORIES and c not in special and c not in tracked_excluded
+    ]
 
     lines = ["categories (with current transaction counts):", "", "budget categories:"]
     lines += fmt(list(BUDGET_CATEGORIES))
     lines += ["", "other spending categories:"]
     lines += fmt(extended)
+    lines += ["", "tracked separately (excluded from budget, own running total):"]
+    lines += fmt(tracked_excluded)
     lines += ["", "tracking / special (excluded from budget totals):"]
     lines += fmt([c for c in ts.CATEGORIES if c in special])
     return lines
@@ -395,6 +410,7 @@ def _cmd_summary(args) -> list[str]:
     year = args[0] if args else None
     by_year_cat = defaultdict(lambda: defaultdict(float))
     unbud = defaultdict(float)
+    repair = defaultdict(float)  # Initial House Repair, tracked separately
     for t in txns:
         y = str(t["year"])
         if year and y != year:
@@ -404,6 +420,8 @@ def _cmd_summary(args) -> list[str]:
             by_year_cat[y][c] += t["amount"]
         elif c in UNBUDGETED:
             unbud[y] += t["amount"]
+        elif c == INITIAL_HOUSE_REPAIR:
+            repair[y] += t["amount"]
     # Regenerate the aggregates JSON the Budget vs Actual view reads.
     export_actuals(txns)
     lines = ["per-category totals (also refreshed Budget vs Actual):"]
@@ -417,6 +435,15 @@ def _cmd_summary(args) -> list[str]:
             lines.append(f"    {'(unbudgeted)':14} {_fmt(unbud[y])}")
     if len(lines) == 1:
         lines.append("  (no categorized spending yet)")
+    # Initial House Repair is excluded from the budget above; report its own
+    # running total (per year + grand total) so it stays visible.
+    if repair:
+        lines.append("")
+        lines.append("Initial House Repair (excluded from budget — one-time move-in repairs):")
+        for y in sorted(repair):
+            lines.append(f"    {y:14} {_fmt(repair[y])}")
+        if len(repair) > 1:
+            lines.append(f"    {'grand total':14} {_fmt(sum(repair.values()))}")
     return lines
 
 
@@ -916,7 +943,22 @@ def _cmd_budget(args) -> list[str]:
     if uncat:
         lines.append(f"  note: {uncat} transaction(s) still Uncategorized - not counted "
                      "in any category above.")
+    repair_total = _initial_house_repair_total()
+    if repair_total:
+        lines.append("")
+        lines.append(f"  Initial House Repair (one-time move-in repairs, excluded from "
+                     f"budget above): {_fmt(repair_total)} to date")
     return lines
+
+
+def _initial_house_repair_total() -> float:
+    """Live running total of the Initial House Repair category (split-aware)."""
+    total = 0.0
+    for t in ts.load_transactions():
+        for c, amt in _split_lines(t):
+            if c == INITIAL_HOUSE_REPAIR:
+                total += amt
+    return round(total, 2)
 
 
 def _category_table(title: str, actual: dict, budget: dict, uncat: int,

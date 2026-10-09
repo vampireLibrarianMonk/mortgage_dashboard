@@ -41,6 +41,13 @@ CATEGORIES = [
     # "Other Home Costs" holds annual/one-off home expenses (contractor jobs,
     # appliances). Reimbursements (negative amounts) filed here net the cost down.
     "Other Home Costs",
+    # "Initial House Repair" holds the one-time move-in repairs made right after
+    # buying the house (roof, HVAC, plumbing, electrical, fireplace, etc.). These
+    # are NOT recurring budget spend, so they are excluded from budget-vs-actual
+    # reconciliation and instead tracked with their own running grand total +
+    # per-line-item detail (a capital-improvement / cost-basis ledger that grows
+    # as older emails, checks, and bank records are backfilled).
+    "Initial House Repair",
     # "Split" marks a transaction that has been itemized into per-item children
     # (see split_transaction). The parent is a container only: its own amount is
     # excluded from actuals and the children carry the real categories/amounts.

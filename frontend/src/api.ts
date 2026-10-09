@@ -83,10 +83,28 @@ export interface ActualsYear {
   unbudgeted_outflow: number;
 }
 
+export interface InitialHouseRepairItem {
+  date: string; // "YYYY-MM-DD"
+  name: string;
+  amount: number;
+  label: string;
+}
+
+// One-time move-in capital repairs: excluded from the budget, tracked with their
+// own running grand total + line items (grows as older records are backfilled).
+export interface InitialHouseRepair {
+  total: number;
+  by_year: Record<string, number>;
+  items: InitialHouseRepairItem[];
+  count: number;
+}
+
 export interface PlaidActuals {
   available: boolean;
   months: ActualsMonth[];
   years: ActualsYear[];
+  // Optional for back-compat with actuals JSON generated before this field.
+  initial_house_repair?: InitialHouseRepair;
 }
 
 // Budget vs Actual reads the aggregates-only JSON the console `summary` command
