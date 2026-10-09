@@ -85,9 +85,12 @@ export interface ActualsYear {
 
 export interface InitialHouseRepairItem {
   date: string; // "YYYY-MM-DD"
-  name: string;
   amount: number;
-  label: string;
+  vendor: string; // clean payee, e.g. "Reddick & Sons"
+  work: string; // what the repair was, e.g. "HVAC replacement"
+  source: string; // provenance, e.g. "NFCU ACH (bank)" / "Invoice 1667 (email)"
+  label: string; // "Vendor — work" fallback for print/back-compat
+  name?: string; // raw transaction name (debug/back-compat)
 }
 
 // One-time move-in capital repairs: excluded from the budget, tracked with their

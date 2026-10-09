@@ -54,22 +54,54 @@ def _category_amounts(t: dict):
 UNASSIGNED_PROFILE = "unassigned"
 
 
+def _derive_vendor(name: str, label: str) -> str:
+    """Best-effort clean vendor name for rows without an explicit `vendor` field
+    (e.g. split children, or legacy rows). Prefers the part of a 'Vendor — work'
+    label; else trims obvious bank-feed noise from the raw transaction name."""
+    if label and "—" in label:
+        return label.split("—", 1)[0].strip()
+    raw = (name or "").strip()
+    # Strip common bank-feed prefixes/suffixes so a raw ACH/check name reads cleanly.
+    for prefix in ("ACH Transaction - ", "ACH Debit - ", "POS Debit - "):
+        if raw.startswith(prefix):
+            raw = raw[len(prefix):]
+    raw = raw.replace(" ACH DEBIT", "").replace(" PAID CHECK", "").strip()
+    return raw or (label.strip() if label else "Repair")
+
+
+def _repair_item(t: dict, amount: float, *, work_override: str = "") -> dict:
+    """Build a structured display item for one repair line. Uses the clean
+    vendor/work/source fields when present (set by normalization), with graceful
+    fallbacks so any row still renders."""
+    label = t.get("label", "")
+    vendor = t.get("vendor") or _derive_vendor(t.get("name", ""), label)
+    work = work_override or t.get("work") or (
+        label.split("—", 1)[1].strip() if label and "—" in label else ""
+    )
+    return {
+        "date": t.get("date", ""),
+        "amount": round(amount, 2),
+        "vendor": vendor,
+        "work": work,
+        "source": t.get("source") or "",
+        # Keep a single human string for back-compat / print views.
+        "label": label or (f"{vendor} — {work}" if work else vendor),
+        "name": t.get("name", ""),
+    }
+
+
 def _repair_lines(t: dict):
     """Yield each Initial House Repair line a transaction contributes, as
     (amount, item dict). A plain repair txn yields one; a split yields one per
-    repair-categorized child (parent's date/name + the child's amount/note)."""
-    date = t.get("date", "")
-    name = t.get("name", "")
-    label = t.get("label", "")
+    repair-categorized child (the child's note becomes the work description)."""
     if t.get("category") == "Split" and t.get("split_children"):
         for child in t["split_children"]:
             if child.get("category") == INITIAL_HOUSE_REPAIR:
                 amt = round(float(child.get("amount", 0.0)), 2)
-                yield amt, {"date": date, "name": name, "amount": amt,
-                            "label": child.get("note", "") or label}
+                yield amt, _repair_item(t, amt, work_override=child.get("note", ""))
     elif t.get("category") == INITIAL_HOUSE_REPAIR:
         amt = round(float(t.get("amount", 0.0)), 2)
-        yield amt, {"date": date, "name": name, "amount": amt, "label": label}
+        yield amt, _repair_item(t, amt)
 
 
 def _repair_block(txns: list[dict]) -> dict:

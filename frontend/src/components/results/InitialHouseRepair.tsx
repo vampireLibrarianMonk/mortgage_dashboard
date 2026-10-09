@@ -11,20 +11,28 @@ interface Props {
 const fmt = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
+// "2026-04-17" -> "Apr 17, 2026" (no timezone shift: parse the parts directly).
+const fmtDate = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+  });
+};
+
 const EMPTY: IHR = { total: 0, by_year: {}, items: [], count: 0 };
 
 /**
  * Initial House Repair — a running total of the one-time, move-in capital repairs
  * (roof, HVAC, plumbing, electrical, fireplace, etc.) for the active property.
- * These are deliberately EXCLUDED from the budget-vs-actual reconciliation (they
- * are not recurring spend); this card is their own per-property ledger. The
- * headline total stays visible even when collapsed and grows as older
- * emails/checks/bank records are backfilled. The card is ALWAYS shown (even at
- * $0) so a newly saved property has a blank move-in ledger ready to fill.
+ * Excluded from the budget-vs-actual reconciliation; this card is its own
+ * per-property ledger. The headline total stays visible when collapsed and grows
+ * as older records are backfilled. The card is ALWAYS shown (even at $0) so a
+ * newly saved property has a blank move-in ledger ready to fill.
  */
 export default function InitialHouseRepair({ profileId }: Props) {
   const [ihr, setIhr] = useState<IHR | null>(null);
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,63 +49,64 @@ export default function InitialHouseRepair({ profileId }: Props) {
   const years = Object.keys(ihr.by_year).sort();
 
   return (
-    <div className="chart-container ihr">
-      <div className="chart-header">
-        <button
-          type="button"
-          className="chart-toggle"
-          onClick={() => setCollapsed(!collapsed)}
-          disabled={empty}
-        >
-          {empty ? "" : collapsed ? "▶ " : "▼ "}Initial House Repair
-        </button>
-        <span className="ihr-total" title="Running total of one-time move-in repairs">
-          {fmt(ihr.total)}
-        </span>
-      </div>
+    <section className="ihr-card">
+      <header
+        className="ihr-card-head"
+        onClick={() => !empty && setCollapsed(!collapsed)}
+        role={empty ? undefined : "button"}
+        tabIndex={empty ? undefined : 0}
+      >
+        <div className="ihr-head-left">
+          {!empty && <span className="ihr-caret">{collapsed ? "▸" : "▾"}</span>}
+          <div className="ihr-head-titles">
+            <span className="ihr-title">Initial House Repair</span>
+            <span className="ihr-subtitle">
+              {empty
+                ? "No move-in repairs recorded yet for this property"
+                : `${ihr.count} one-time repair${ihr.count === 1 ? "" : "s"} · excluded from budget`}
+            </span>
+          </div>
+        </div>
+        <span className="ihr-grand">{fmt(ihr.total)}</span>
+      </header>
 
-      {empty ? (
-        <p className="section-hint ihr-note">
-          No move-in repairs recorded yet for this property. One-time repairs
-          (roof, HVAC, electrical, etc.) tagged to this profile will total here,
-          excluded from the budget.
+      {empty && (
+        <p className="ihr-empty-hint">
+          One-time repairs (roof, HVAC, electrical, etc.) tagged to this property
+          will total here, kept separate from your monthly budget.
         </p>
-      ) : (
+      )}
+
+      {!empty && !collapsed && (
         <>
-          <p className="section-hint ihr-note">
-            One-time move-in repairs ({ihr.count} item{ihr.count === 1 ? "" : "s"}),
-            excluded from the budget. This total grows as older records are added.
-          </p>
-          {!collapsed && (
-            <div className="chart-body">
-              <dl className="ihr-grid">
-                <div className="ihr-head">
-                  <dt>Date</dt>
-                  <dd>Item</dd>
-                  <dd>Amount</dd>
+          <ul className="ihr-list">
+            {ihr.items.map((it, i) => (
+              <li className="ihr-item" key={`${it.date}-${i}`}>
+                <div className="ihr-item-main">
+                  <span className="ihr-vendor">{it.vendor}</span>
+                  {it.work && <span className="ihr-work">{it.work}</span>}
                 </div>
-                {ihr.items.map((it, i) => (
-                  <div className="ihr-row" key={`${it.date}-${i}`}>
-                    <dt>{it.date}</dt>
-                    <dd title={it.name}>{it.label || it.name}</dd>
-                    <dd className="ihr-amt">{fmt(it.amount)}</dd>
-                  </div>
-                ))}
-                <div className="ihr-row ihr-footer">
-                  <dt></dt>
-                  <dd>Total</dd>
-                  <dd className="ihr-amt">{fmt(ihr.total)}</dd>
+                <div className="ihr-item-meta">
+                  <span className="ihr-date">{fmtDate(it.date)}</span>
+                  {it.source && <span className="ihr-source">{it.source}</span>}
                 </div>
-              </dl>
-              {years.length > 1 && (
-                <p className="section-hint">
-                  By year: {years.map((y) => `${y} ${fmt(ihr.by_year[y])}`).join("  ·  ")}
-                </p>
-              )}
-            </div>
-          )}
+                <span className="ihr-amount">{fmt(it.amount)}</span>
+              </li>
+            ))}
+          </ul>
+          <footer className="ihr-foot">
+            {years.length > 1 && (
+              <span className="ihr-byyear">
+                {years.map((y) => `${y}: ${fmt(ihr.by_year[y])}`).join("   ")}
+              </span>
+            )}
+            <span className="ihr-foot-total">
+              <span className="ihr-foot-label">Total</span>
+              <span className="ihr-amount">{fmt(ihr.total)}</span>
+            </span>
+          </footer>
         </>
       )}
-    </div>
+    </section>
   );
 }

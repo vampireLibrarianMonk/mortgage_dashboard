@@ -54,18 +54,22 @@ def test_ihr_total_by_year_and_items(export):
         _txn(category="Initial House Repair", amount=9046.35,
              date="2026-09-15", name="American Home Co", label="roof"),
         _txn(category="Initial House Repair", amount=850.0,
-             date="2026-07-27", name="Paid Check 2894", label="Sungho Lee"),
+             date="2026-07-27", name="Paid Check 2894",
+             vendor="Sungho Lee", work="Drywall repair", source="NFCU check"),
         _txn(year=2025, month=11, category="Initial House Repair", amount=1000.0,
-             date="2025-11-02", name="Prior year repair", label="fence"),
+             date="2025-11-02", name="raw", vendor="Fence Co", work="New fence",
+             source="card"),
     ])
     ihr = data["initial_house_repair"]
     assert ihr["total"] == pytest.approx(10896.35)
     assert ihr["count"] == 3
     assert ihr["by_year"] == {"2025": 1000.0, "2026": 9896.35}
-    # Items are sorted by date; each carries date/name/amount/label.
+    # Items are sorted by date; each carries structured vendor/work/source.
     assert [it["date"] for it in ihr["items"]] == ["2025-11-02", "2026-07-27", "2026-09-15"]
     first = ihr["items"][0]
-    assert first["name"] == "Prior year repair" and first["label"] == "fence"
+    assert first["vendor"] == "Fence Co"
+    assert first["work"] == "New fence"
+    assert first["source"] == "card"
     assert first["amount"] == 1000.0
 
 
@@ -97,10 +101,10 @@ def test_ihr_split_child_surfaced_and_sibling_budgeted(export):
     assert ihr["total"] == 200.0
     assert ihr["count"] == 1
     item = ihr["items"][0]
-    assert item["name"] == "Hardware store"      # parent's name
+    assert item["vendor"] == "Hardware store"    # parent's name -> vendor
     assert item["date"] == "2026-07-05"          # parent's date
     assert item["amount"] == 200.0               # child's amount
-    assert item["label"] == "light fixture"      # child's note
+    assert item["work"] == "light fixture"       # child's note -> work
 
     # The budget sibling counts; the Split parent's own $300 never does.
     jul = next(m for m in data["months"] if m["month"] == "2026-07")
@@ -169,7 +173,7 @@ def test_split_child_repair_grouped_by_parent_profile(export):
     ])
     bp = data["initial_house_repair_by_profile"]
     assert bp["eeee5555"]["total"] == pytest.approx(200.0)
-    assert bp["eeee5555"]["items"][0]["label"] == "fixture"
+    assert bp["eeee5555"]["items"][0]["work"] == "fixture"
 
 
 # --- endpoint scoping (GET /plaid/actuals?profile=) ---------------------------
