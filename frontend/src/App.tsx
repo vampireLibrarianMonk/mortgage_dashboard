@@ -54,6 +54,10 @@ function pageFromPath(pathname: string): Page {
 function App() {
   const { state, dispatch, result, loading, error } = useCalculation();
   const [profileAddress, setProfileAddress] = useState("");
+  // Stable id of the currently loaded/saved profile (the property key). Null
+  // until a profile is loaded or saved. Threaded into the results panel so the
+  // move-in-repair ledger can scope to this property.
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [page, setPageState] = useState<Page>(() => pageFromPath(window.location.pathname));
   // Active tax year for the Tax Prep tab (defaults to 2025, the current corpus).
   const [taxYear, setTaxYear] = useState(2025);
@@ -108,8 +112,9 @@ function App() {
   const saveCurrentProfile = async (address: string) => {
     const trimmed = address.trim();
     if (!trimmed) return;
-    await saveProfile(trimmed, state);
+    const saved = await saveProfile(trimmed, state);
     setProfileAddress(trimmed);
+    setActiveProfileId(saved.id);
   };
 
   // --- Timeline scenarios (named plans the user tabs between; per-profile) ---
@@ -283,7 +288,7 @@ function App() {
         </main>
       ) : (
         <>
-      <ProfileManager currentState={state} onLoad={loadState} onAddressChange={setProfileAddress} />
+      <ProfileManager currentState={state} onLoad={loadState} onAddressChange={setProfileAddress} onActiveIdChange={setActiveProfileId} />
       <main className="layout">
         <div className="inputs-panel">
           <HousePurchaseSection data={state.house_purchase} onChange={setField("house_purchase")} />
@@ -302,7 +307,7 @@ function App() {
         <div className="results-column">
           {loading && <p className="loading">Calculating…</p>}
           {error && <p className="error">{error}</p>}
-          {result && <ResultsPanel result={result} purchaseMode={state.house_purchase.purchase_mode} discretionary={state.discretionary} />}
+          {result && <ResultsPanel result={result} purchaseMode={state.house_purchase.purchase_mode} discretionary={state.discretionary} profileId={activeProfileId} />}
         </div>
       </main>
 

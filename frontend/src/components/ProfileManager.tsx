@@ -184,16 +184,24 @@ interface Props {
   currentState: CalculateRequest;
   onLoad: (data: CalculateRequest) => void;
   onAddressChange: (address: string) => void;
+  // Report the stable id of the active profile up to App (the property key used
+  // to scope the move-in-repair ledger). Optional for callers that don't need it.
+  onActiveIdChange?: (id: string | null) => void;
 }
 
-export default function ProfileManager({ currentState, onLoad, onAddressChange }: Props) {
+export default function ProfileManager({ currentState, onLoad, onAddressChange, onActiveIdChange }: Props) {
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [address, setAddressRaw] = useState("");
   const setAddress = (value: string) => {
     setAddressRaw(value);
     onAddressChange(value);
   };
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeId, setActiveIdRaw] = useState<string | null>(null);
+  // Keep App's copy of the active profile id in sync whenever it changes here.
+  const setActiveId = (id: string | null) => {
+    setActiveIdRaw(id);
+    onActiveIdChange?.(id);
+  };
   const [showList, setShowList] = useState(false);
 
   const refresh = useCallback(async () => {

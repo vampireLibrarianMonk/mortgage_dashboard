@@ -104,14 +104,23 @@ export interface PlaidActuals {
   months: ActualsMonth[];
   years: ActualsYear[];
   // Optional for back-compat with actuals JSON generated before this field.
+  // When plaidActuals is called with a profileId, this is scoped to that
+  // property (an empty skeleton when it has no repairs yet).
   initial_house_repair?: InitialHouseRepair;
+  // Per-property repair ledgers, keyed by profile_id (plus an "unassigned"
+  // bucket for untagged legacy rows).
+  initial_house_repair_by_profile?: Record<string, InitialHouseRepair>;
 }
 
 // Budget vs Actual reads the aggregates-only JSON the console `summary` command
-// produces. All other Plaid interaction (status, sync, balances, link diagnostics)
-// is driven from the console page, not the dashboard.
-export async function plaidActuals(): Promise<PlaidActuals> {
-  const res = await fetch(`${API_BASE}/plaid/actuals`);
+// produces. When `profileId` is given, the initial_house_repair block is scoped
+// to that property (empty skeleton if it has none yet); otherwise it's the
+// global grand total. All other Plaid interaction is driven from the console.
+export async function plaidActuals(profileId?: string | null): Promise<PlaidActuals> {
+  const url = profileId
+    ? `${API_BASE}/plaid/actuals?profile=${encodeURIComponent(profileId)}`
+    : `${API_BASE}/plaid/actuals`;
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`Actuals failed: ${res.status}`);
   return res.json();
 }

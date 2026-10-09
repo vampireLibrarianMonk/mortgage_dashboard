@@ -50,36 +50,50 @@ def _category_amounts(t: dict):
         yield t.get("category"), float(t.get("amount", 0.0))
 
 
-def _repair_items(txns: list[dict]) -> list[dict]:
-    """Per-line-item detail for the Initial House Repair ledger.
+# Bucket key for repair transactions not yet tagged to a profile/property.
+UNASSIGNED_PROFILE = "unassigned"
 
-    One entry per contributing line: a plain repair transaction yields one item;
-    a split transaction yields one item per child categorized as a repair (the
-    parent's date/name with the child's amount + note). Sorted by date.
-    """
+
+def _repair_lines(t: dict):
+    """Yield each Initial House Repair line a transaction contributes, as
+    (amount, item dict). A plain repair txn yields one; a split yields one per
+    repair-categorized child (parent's date/name + the child's amount/note)."""
+    date = t.get("date", "")
+    name = t.get("name", "")
+    label = t.get("label", "")
+    if t.get("category") == "Split" and t.get("split_children"):
+        for child in t["split_children"]:
+            if child.get("category") == INITIAL_HOUSE_REPAIR:
+                amt = round(float(child.get("amount", 0.0)), 2)
+                yield amt, {"date": date, "name": name, "amount": amt,
+                            "label": child.get("note", "") or label}
+    elif t.get("category") == INITIAL_HOUSE_REPAIR:
+        amt = round(float(t.get("amount", 0.0)), 2)
+        yield amt, {"date": date, "name": name, "amount": amt, "label": label}
+
+
+def _repair_block(txns: list[dict]) -> dict:
+    """Build the Initial House Repair ledger block for a set of transactions:
+    running grand total, per-year totals, sorted line items, and a count."""
     items: list[dict] = []
+    by_year: dict[str, float] = defaultdict(float)
     for t in txns:
-        date = t.get("date", "")
-        name = t.get("name", "")
-        label = t.get("label", "")
-        if t.get("category") == "Split" and t.get("split_children"):
-            for child in t["split_children"]:
-                if child.get("category") == INITIAL_HOUSE_REPAIR:
-                    items.append({
-                        "date": date,
-                        "name": name,
-                        "amount": round(float(child.get("amount", 0.0)), 2),
-                        "label": child.get("note", "") or label,
-                    })
-        elif t.get("category") == INITIAL_HOUSE_REPAIR:
-            items.append({
-                "date": date,
-                "name": name,
-                "amount": round(float(t.get("amount", 0.0)), 2),
-                "label": label,
-            })
+        y = str(int(t["year"]))
+        for amt, item in _repair_lines(t):
+            items.append(item)
+            by_year[y] += amt
     items.sort(key=lambda it: (it["date"], -it["amount"]))
-    return items
+    return {
+        "total": round(sum(by_year.values()), 2),
+        "by_year": {y: round(v, 2) for y, v in sorted(by_year.items())},
+        "items": items,
+        "count": len(items),
+    }
+
+
+def _repair_items(txns: list[dict]) -> list[dict]:
+    """Back-compat helper: just the sorted line items (see _repair_block)."""
+    return _repair_block(txns)["items"]
 
 
 def export_actuals(txns: list[dict]) -> None:
@@ -87,7 +101,6 @@ def export_actuals(txns: list[dict]) -> None:
     by_month = defaultdict(lambda: defaultdict(float))
     by_year = defaultdict(lambda: defaultdict(float))
     um, uy = defaultdict(float), defaultdict(float)
-    repair_by_year: dict[str, float] = defaultdict(float)
     for t in txns:
         y = int(t["year"])
         mk = f"{y:04d}-{int(t['month']):02d}"
@@ -98,20 +111,27 @@ def export_actuals(txns: list[dict]) -> None:
             elif c in UNBUDGETED:
                 um[mk] += amt
                 uy[str(y)] += amt
-            elif c == INITIAL_HOUSE_REPAIR:
-                repair_by_year[str(y)] += amt
 
     def cats(d):
         return {c: round(d.get(c, 0.0), 2) for c in BUDGET_CATEGORIES}
 
-    repair_items = _repair_items(txns)
-    initial_house_repair = {
-        # Running grand total across all years — the headline number that grows as
-        # older emails/checks/bank records are backfilled.
-        "total": round(sum(repair_by_year.values()), 2),
-        "by_year": {y: round(v, 2) for y, v in sorted(repair_by_year.items())},
-        "items": repair_items,
-        "count": len(repair_items),
+    # Global repair block (grand total across all properties) — kept for
+    # back-compat with any caller that reads the flat `initial_house_repair`.
+    initial_house_repair = _repair_block(txns)
+
+    # Per-property repair blocks, keyed by profile_id. Repairs with no profile
+    # tag fall into the UNASSIGNED bucket so nothing is silently dropped.
+    repair_txns: dict[str, list[dict]] = defaultdict(list)
+    for t in txns:
+        is_repair = t.get("category") == INITIAL_HOUSE_REPAIR or (
+            t.get("category") == "Split"
+            and any(c.get("category") == INITIAL_HOUSE_REPAIR
+                    for c in t.get("split_children", []))
+        )
+        if is_repair:
+            repair_txns[t.get("profile_id") or UNASSIGNED_PROFILE].append(t)
+    initial_house_repair_by_profile = {
+        pid: _repair_block(rows) for pid, rows in repair_txns.items()
     }
 
     out = {
@@ -122,5 +142,6 @@ def export_actuals(txns: list[dict]) -> None:
         "years": [{"year": y, "categories": cats(by_year[y]), "unbudgeted_outflow": round(uy.get(y, 0.0), 2)}
                   for y in sorted(set(by_year) | set(uy))],
         "initial_house_repair": initial_house_repair,
+        "initial_house_repair_by_profile": initial_house_repair_by_profile,
     }
     actuals_path().write_text(json.dumps(out, indent=2))

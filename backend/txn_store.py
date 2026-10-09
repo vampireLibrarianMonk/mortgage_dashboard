@@ -157,9 +157,55 @@ def set_label(match_text: str, label: str, amount: float | None = None,
     return n
 
 
+def set_property(match_text: str, profile_id: str | None, amount: float | None = None,
+                 account_mask: str | None = None, category: str | None = None) -> int:
+    """Attach a property/profile tag (`profile_id`) to matching transactions.
+
+    This binds a transaction to a specific saved profile (property), so a
+    per-property ledger (e.g. Initial House Repair) can show each property's own
+    items. Matches by case-insensitive substring on name/merchant, optionally
+    narrowed by exact amount, account, and/or an exact category (handy to scope a
+    bulk tag to just the repair rows). A falsy `profile_id` clears the tag.
+    Returns the count tagged. profile_id is the stable 8-char id from
+    profiles_store (not the mutable address)."""
+    match_text = (match_text or "").strip().lower()
+    txns = load_transactions()
+    n = 0
+    for t in txns:
+        text = f"{t.get('name','')} {t.get('merchant','')}".lower()
+        if match_text and match_text not in text:
+            continue
+        if amount is not None and abs(t["amount"] - amount) >= 0.005:
+            continue
+        if account_mask and t.get("account_mask") != account_mask:
+            continue
+        if category is not None and t.get("category") != category:
+            continue
+        if profile_id:
+            t["profile_id"] = profile_id
+        else:
+            t.pop("profile_id", None)
+        n += 1
+    save_transactions(txns)
+    return n
+
+
+def repairs_by_profile() -> dict[str | None, list[dict]]:
+    """Group Initial House Repair transactions by their profile_id (None =
+    untagged/legacy). Convenience for inspection; the actuals export does the
+    authoritative aggregation."""
+    out: dict[str | None, list[dict]] = {}
+    for t in load_transactions():
+        if t.get("category") != "Initial House Repair":
+            continue
+        out.setdefault(t.get("profile_id"), []).append(t)
+    return out
+
+
 # Metadata fields that may be backfilled onto already-known transactions on
 # re-sync (they were not captured by earlier versions of the sync). The user's
-# category is never touched here.
+# category is never touched here. profile_id is intentionally NOT backfilled from
+# incoming sync rows (which never carry it) so a manual property tag is preserved.
 _BACKFILL_FIELDS = ("bank", "account_id", "account_mask", "merchant", "authorized_date")
 
 

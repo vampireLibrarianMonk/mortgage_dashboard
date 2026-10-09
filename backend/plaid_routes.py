@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 import re
 
-import balances_store
 from fastapi import APIRouter, HTTPException
 from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.country_code import CountryCode
@@ -29,6 +28,7 @@ from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCr
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from pydantic import BaseModel
 
+import balances_store
 import credential_store as store
 from plaid_client import PlaidConfigError, build_client, credentials_available, get_plaid_env
 
@@ -79,20 +79,39 @@ def status():
     return {"configured": credentials_available(), "env": get_plaid_env()}
 
 
+_EMPTY_REPAIR = {"total": 0.0, "by_year": {}, "items": [], "count": 0}
+
+
+def _actuals_path():
+    """Location of the aggregates JSON the dashboard reads. Factored into a
+    helper so tests can redirect it away from the real file."""
+    from pathlib import Path
+    return Path(__file__).resolve().parent / "plaid_actuals.json"
+
+
 @router.get("/actuals")
-def actuals():
+def actuals(profile: str | None = None):
     """Serve the aggregates-only budget-vs-actual data produced by the pipeline.
 
     Reads backend/plaid_actuals.json (per-month + yearly category totals only —
     no transactions, no balances). Returns an empty structure if the pipeline has
     not been run yet.
+
+    When `profile` (a profile_id) is given, the `initial_house_repair` block is
+    scoped to that property's repairs — an empty skeleton when the property has
+    none yet (so a newly saved profile shows a blank move-in ledger ready to fill,
+    not another property's totals). Without `profile`, the global grand total is
+    returned (back-compat). The per-month/per-year budget figures are unchanged
+    either way — only the move-in-repair ledger is property-scoped.
     """
     import json
-    from pathlib import Path
-    path = Path(__file__).resolve().parent / "plaid_actuals.json"
+    path = _actuals_path()
     if not path.exists():
         return {"available": False, "months": [], "years": []}
     data = json.loads(path.read_text())
+    if profile is not None:
+        by_profile = data.get("initial_house_repair_by_profile", {})
+        data["initial_house_repair"] = by_profile.get(profile, dict(_EMPTY_REPAIR))
     return {"available": True, **data}
 
 

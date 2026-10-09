@@ -7,6 +7,8 @@ interface Props {
   result: CalculateResponse;
   purchaseMode: PurchaseMode;
   discretionary: DiscretionaryRow[];
+  // Active profile (property) id, used to scope the move-in-repair ledger.
+  profileId?: string | null;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -24,7 +26,7 @@ function rowMonthly(row: DiscretionaryRow): number {
   return row.amount;
 }
 
-export default function ResultsPanel({ result, purchaseMode, discretionary }: Props) {
+export default function ResultsPanel({ result, purchaseMode, discretionary, profileId }: Props) {
   const r = result;
   const isExisting = purchaseMode === "existing_mortgage";
 
@@ -84,7 +86,7 @@ export default function ResultsPanel({ result, purchaseMode, discretionary }: Pr
 
       <BudgetVsActual result={r} />
 
-      <InitialHouseRepair />
+      <InitialHouseRepair profileId={profileId} />
 
       {discretionaryRanked.length > 0 && (
         <section className="discretionary-summary">
