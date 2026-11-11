@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 interface Props {
   // Stored value is "YYYY-MM" (or "" when empty/unset).
   value: string;
@@ -37,12 +39,27 @@ function compose(year: string, month: string): string {
  * and expands to fill its column.
  */
 export default function MonthYearInput({ value, onChange, disabled, min, title }: Props) {
-  const { year, month } = parse(value);
+  // Local draft so partial typing (e.g. a 3-digit year, or a month picked before the
+  // year) is kept on screen. The parent is only told once year+month are complete;
+  // emitting "" for partial input used to wipe the field (and turn End into "ongoing").
+  const [draft, setDraft] = useState(() => parse(value));
+  const { year, month } = draft;
+
+  // Re-sync when the stored value changes from outside (or after a min clamp).
+  useEffect(() => {
+    if (value && value !== compose(draft.year, draft.month)) setDraft(parse(value));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
 
   const emit = (nextYear: string, nextMonth: string) => {
+    setDraft({ year: nextYear, month: nextMonth });
     let composed = compose(nextYear, nextMonth);
-    if (composed && min && composed < min) composed = min;
-    onChange(composed);
+    if (!composed) return;
+    if (min && composed < min) {
+      composed = min;
+      setDraft(parse(min));
+    }
+    if (composed !== value) onChange(composed);
   };
 
   return (
