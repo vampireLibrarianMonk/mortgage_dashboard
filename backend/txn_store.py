@@ -35,6 +35,9 @@ CATEGORIES = [
     # user-defined categories.
     "Medical", "Skill Improvement", "Security", "Insurance", "Legal",
     "Home Improvement", "College Savings", "Investments",
+    # "Travel" holds work-event travel (e.g. Uber to a work event) that the
+    # employer did not reimburse. Tracked outside the 7 budget categories.
+    "Travel",
     # ATM cash activity, tracked as three separate lines so each is traceable:
     # withdrawals (cash out), fees (surcharges), rebates (fee refunds).
     "ATM Withdrawals", "ATM Fees", "ATM Rebates",
