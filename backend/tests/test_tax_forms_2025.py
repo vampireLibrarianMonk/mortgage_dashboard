@@ -157,6 +157,11 @@ FEDERAL_SAMPLE = (
     "Return | Total Payments/Credits                  $     35,287.00\n"
     "Refund | Amount of line 34 you want refunded to you $ 12,345.00\n"
     "Married filing jointly\n"
+    "Electronic Filing Instructions for your 2025 Virginia Tax Return\n"
+    "2025 | Taxable Income                          $    258,529.00\n"
+    "Virginia | Total Tax                               $     14,349.00\n"
+    "Tax | Total Payments/Credits                  $     14,495.00\n"
+    "Return | Amount to be Refunded                   $        146.00\n"
 )
 
 
@@ -170,6 +175,16 @@ def test_f1040_summary_facts():
     assert by["ret_refund"].value == "12345.00"
     assert by["ret_filing_status"].value == "Married filing jointly"
     assert "ret_amount_owed" not in by  # a refund year, not a balance-due year
+
+
+def test_f1040_embedded_virginia_block():
+    facts = extract_f1040_facts("doc4", 2025, native(FEDERAL_SAMPLE))
+    by = {f.field_code: f for f in facts}
+    assert by["ret_st_va_state_name"].value == "Virginia"
+    assert by["ret_st_va_taxable_income"].value == "258529.00"
+    assert by["ret_st_va_total_tax"].value == "14349.00"
+    assert by["ret_st_va_total_payments"].value == "14495.00"
+    assert by["ret_st_va_refund"].value == "146.00"
 
 
 # --- as-filed Illinois return (native text) -----------------------------------

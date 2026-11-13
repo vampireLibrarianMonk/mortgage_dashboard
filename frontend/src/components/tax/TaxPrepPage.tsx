@@ -63,7 +63,7 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
   // States whose W-2 withholding we paid — used to surface states with no
   // as-filed return on file (e.g. VA withholding in a year whose only filed
   // state return was Illinois).
-  const filedStateName = summary?.as_filed.state?.name ?? null;
+  const filedStateNames = (summary?.as_filed.states ?? []).map((s) => s.name);
   const withheldByState: { state: string; total: number }[] = [];
   if (summary) {
     const by = new Map<string, number>();
@@ -77,7 +77,7 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
   const stateName = (code: string | null) =>
     code === "VA" ? "Virginia" : code === "IL" ? "Illinois" : (code ?? "");
   const unfiledStates = withheldByState.filter(
-    (s) => !filedStateName || !filedStateName.includes(stateName(s.state)),
+    (s) => !filedStateNames.includes(stateName(s.state)),
   );
 
   const handleDelete = async (doc: TaxDocument) => {
@@ -154,16 +154,21 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
               <div className="tax-kv"><span>Withholding coverage</span><span>{pct(summary.as_filed.derived.withholding_coverage)}</span></div>
             )}
           </div>
-          {summary.as_filed.state ? (
-            <div className="tax-card tax-card-state">
-              <span className="tax-pic-label">{summary.as_filed.state.name} — as filed</span>
-              <div className="tax-kv"><span>Taxable income</span><span>{fmt(summary.as_filed.state.taxable_income)}</span></div>
-              <div className="tax-kv"><span>Total tax</span><span>{fmt(summary.as_filed.state.total_tax)}</span></div>
-              {summary.as_filed.state.balance_due != null && (
-                <div className="tax-kv tax-kv-due"><span>Payment due</span><span>{fmt(summary.as_filed.state.balance_due)}</span></div>
+          {summary.as_filed.states.map((st) => (
+            <div className="tax-card tax-card-state" key={st.name ?? st.document_id}>
+              <span className="tax-pic-label">{st.name} — as filed</span>
+              <div className="tax-kv"><span>Taxable income</span><span>{fmt(st.taxable_income)}</span></div>
+              <div className="tax-kv"><span>Total tax</span><span>{fmt(st.total_tax)}</span></div>
+              <div className="tax-kv"><span>Payments/credits</span><span>{fmt(st.payments)}</span></div>
+              {st.refund != null && (
+                <div className="tax-kv"><span>Refund</span><span>{fmt(st.refund)}</span></div>
+              )}
+              {st.balance_due != null && (
+                <div className="tax-kv tax-kv-due"><span>Payment due</span><span>{fmt(st.balance_due)}</span></div>
               )}
             </div>
-          ) : (
+          ))}
+          {summary.as_filed.states.length === 0 && (
             <div className="tax-card tax-pic-pending">
               <span className="tax-pic-label">State</span>
               <span className="tax-pic-note">no state return on file for {year}</span>

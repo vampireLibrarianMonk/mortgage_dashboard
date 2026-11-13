@@ -85,12 +85,15 @@ test("tax prep 2025 renders the as-filed summary layout", async ({ page }) => {
     page.locator(".tax-card-state", { hasText: "Illinois" }).locator(".tax-pic-label"),
   ).toHaveText("Illinois — as filed");
 
-  // VA withholding was paid but no VA return is on file -> surfaced honestly.
+  // Virginia's 760 is embedded in the federal e-file package -> as-filed card.
   await expect(
     page.locator(".tax-card-state", { hasText: "Virginia" }).locator(".tax-pic-label"),
-  ).toHaveText("Virginia — withholding paid, return not on file");
+  ).toHaveText("Virginia — as filed");
   await expect(page.locator(".tax-card-state", { hasText: "Virginia" })).toContainText(
-    "14,471.57",
+    "14,349.00",
+  );
+  await expect(page.locator(".tax-card-state", { hasText: "Virginia" })).toContainText(
+    "146.00",
   );
 
   // Salary rows per person + household strip.

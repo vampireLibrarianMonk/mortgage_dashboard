@@ -340,6 +340,8 @@ export interface TaxAsFiledState {
   name: string;
   taxable_income: number | null;
   total_tax: number | null;
+  payments: number | null;
+  refund: number | null;
   balance_due: number | null;
   document_id: string;
 }
@@ -378,7 +380,7 @@ export interface TaxYearSummary {
   };
   as_filed: {
     federal: TaxAsFiledFederal | null;
-    state: TaxAsFiledState | null;
+    states: TaxAsFiledState[];
     derived: TaxAsFiledDerived | null;
   };
   hourly: unknown | null;

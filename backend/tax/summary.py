@@ -1,10 +1,10 @@
-"""Tax Year Summary: aggregated, facts-only view the Tax Prep UI renders.
+﻿"""Tax Year Summary: aggregated, facts-only view the Tax Prep UI renders.
 
 Deterministic and honest: every number comes from a stored TaxFact or the
 document inventory — nothing is invented, no tax is computed. The only derived
 values are clearly-labeled ratios of two as-filed numbers (effective rate,
-withholding coverage) and their shortfall in dollars. Missing data is simply
-absent so the UI can render empty states."""
+withholding coverage) and their shortfall. Missing data is simply absent — the
+UI renders empty states, never estimates."""
 from __future__ import annotations
 
 import re
@@ -20,9 +20,7 @@ _DROP_TOKENS = {
     "patrick", "sara", "employer", "coverage",
 }
 
-_STATE_NAMES = {"IL-1040": "Illinois"}
-
-_TAIL_NUM = re.compile(r"^-?\d+(\.\d+)?$")
+_STATE_NAMES = {"IL-1040": "Illinois", "VA-1040": "Virginia"}
 
 
 def _num(value) -> float | None:
@@ -53,10 +51,7 @@ def _employer_from_filename(filename: str | None) -> str | None:
         return None
     stem = filename.rsplit(".", 1)[0]
     tokens = [t for t in re.split(r"[_\-]", stem) if t]
-    kept = [
-        t for t in tokens
-        if t.lower() not in _DROP_TOKENS and not t.isdigit()
-    ]
+    kept = [t for t in tokens if t.lower() not in _DROP_TOKENS and not t.isdigit()]
     return " ".join(kept) if kept else None
 
 
@@ -123,7 +118,7 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
     side_income: list[dict] = []
     informational: list[dict] = []
     as_filed_federal: dict = {}
-    as_filed_state: dict = {}
+    as_filed_states: list[dict] = []
     doc_refs: list[dict] = []
 
     for doc in sorted(docs, key=lambda d: d.original_filename):
@@ -150,14 +145,34 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
                 "filing_status": fvals.get("ret_filing_status"),
                 "document_id": doc.id,
             }
+            # State summaries embedded in the same e-file package (e.g. the
+            # Virginia 760 block) — one entry per state found.
+            st: dict[str, dict] = {}
+            for code, val in fvals.items():
+                m = re.match(r"ret_st_([a-z]+)_(.+)$", code)
+                if m:
+                    st.setdefault(m.group(1), {})[m.group(2)] = val
+            for slug in sorted(st):
+                kv = st[slug]
+                as_filed_states.append({
+                    "name": kv.get("state_name"),
+                    "taxable_income": _num(kv.get("taxable_income")),
+                    "total_tax": _num(kv.get("total_tax")),
+                    "payments": _num(kv.get("total_payments")),
+                    "refund": _num(kv.get("refund")),
+                    "balance_due": _num(kv.get("balance_due")),
+                    "document_id": doc.id,
+                })
         elif ft is FormType.f1040_il:
-            as_filed_state = {
+            as_filed_states.append({
                 "name": _STATE_NAMES.get(doc.form_type.value, doc.form_type.value),
                 "taxable_income": _num(fvals.get("il_taxable_income")),
                 "total_tax": _num(fvals.get("il_tax")),
+                "payments": None,
+                "refund": None,
                 "balance_due": _num(fvals.get("il_balance_due")),
                 "document_id": doc.id,
-            }
+            })
         elif ft in (FormType.f1095_c, FormType.f3922):
             informational.append({
                 "form_type": ft.value,
@@ -208,10 +223,10 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
         },
         "as_filed": {
             "federal": as_filed_federal or None,
-            "state": as_filed_state or None,
+            "states": as_filed_states,
             "derived": derived or None,
         },
-        "hourly": None,  # lights up when a final-2025-paid paystub (with hours) is on file
+        "hourly": None,  # lights up when a final-of-year paystub (with hours) is on file
         "dependents": None,  # needs a column-aware parse of the 1040 dependents table
         "informational": informational,
         "documents": doc_refs,

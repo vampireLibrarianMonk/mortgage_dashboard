@@ -66,6 +66,11 @@ def test_summary_salary_investments_and_as_filed():
             ("ret_agi", "282819.00"), ("ret_total_tax", "44076.00"),
             ("ret_amount_owed", "8934.00"),
             ("ret_filing_status", "Married filing jointly"),
+            ("ret_st_va_state_name", "Virginia"),
+            ("ret_st_va_taxable_income", "258529.00"),
+            ("ret_st_va_total_tax", "14349.00"),
+            ("ret_st_va_total_payments", "14495.00"),
+            ("ret_st_va_refund", "146.00"),
         ], FormType.f1040),
         il.id: facts_for(il, [
             ("il_taxable_income", "463.00"), ("il_tax", "23.00"),
@@ -88,8 +93,13 @@ def test_summary_salary_investments_and_as_filed():
     assert s["side_income"]["total"] == 240.00
     assert s["as_filed"]["federal"]["agi"] == 282819.00
     assert s["as_filed"]["federal"]["balance_due"] == 8934.00
-    assert s["as_filed"]["state"]["name"] == "Illinois"
-    assert s["as_filed"]["state"]["balance_due"] == 23.00
+    # Two state filings for 2025: Illinois (separate return) and Virginia
+    # (embedded in the federal e-file package).
+    assert [st["name"] for st in s["as_filed"]["states"]] == ["Virginia", "Illinois"]
+    va = s["as_filed"]["states"][0]
+    assert va["taxable_income"] == 258529.00
+    assert va["total_tax"] == 14349.00
+    assert va["refund"] == 146.00
 
     derived = s["as_filed"]["derived"]
     assert derived["effective_rate"] == round(44076.00 / 282819.00, 4)
@@ -102,7 +112,7 @@ def test_summary_empty_year_is_an_honest_skeleton():
     assert s["salary"]["people"] == []
     assert s["salary"]["total_wages"] == 0.0
     assert s["as_filed"]["federal"] is None
-    assert s["as_filed"]["state"] is None
+    assert s["as_filed"]["states"] == []
     assert s["as_filed"]["derived"] is None
     assert s["documents"] == []
 
