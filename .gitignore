@@ -19,6 +19,8 @@ frontend/dist/
 
 # Kiro
 .kiro/
+# Kiro agent task artifacts (baselines/review notes for completed agent tasks)
+.agents/
 
 # Database
 *.db
