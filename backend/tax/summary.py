@@ -138,6 +138,21 @@ def _deduction_entries(doc_id: str, fvals: dict[str, object]) -> list[dict]:
             "note": "; ".join(bits) or None,
         })
 
+    cap_net = _num(fvals.get("ret_fed_capital_loss_net"))
+    cap_limit = _num(fvals.get("ret_fed_capital_loss_limit"))
+    if cap_limit is not None:
+        note = f"Schedule D net loss ${abs(cap_net):,.2f} as filed, limited to the statutory ${cap_limit:,.0f} cap"
+        if cap_net is not None:
+            note += f"; ${abs(cap_net) - cap_limit:,.2f} carries to the next year"
+        entries.append({
+            "label": "Capital loss deduction (statutory limit)",
+            "source": "Form 1040 line 7a · Schedule D line 21",
+            "jurisdiction": "Federal",
+            "amount": cap_limit,
+            "document_id": doc_id,
+            "note": note,
+        })
+
     va_529 = _num(fvals.get("ret_st_va_529_deduction"))
     if va_529 is not None:
         va_bits = [
@@ -157,14 +172,26 @@ def _deduction_entries(doc_id: str, fvals: dict[str, object]) -> list[dict]:
     return entries
 
 
-def _il_529_entry(doc_id: str) -> dict:
+def _il_529_entry(doc_id: str, il_fvals: dict[str, object] | None) -> dict:
+    taxable = _num((il_fvals or {}).get("il_taxable_income"))
+    tax = _num((il_fvals or {}).get("il_tax"))
+    note = (
+        "The IL return's schedule pages have no readable text layer (embedded-font "
+        "encoding), so line-level subtractions such as Bright Start 529 contributions "
+        "cannot be verified here"
+    )
+    if taxable is not None:
+        note += f" — Illinois taxable income is ${taxable:,.2f}"
+        if tax is not None:
+            note += f" with ${tax:,.2f} of tax"
+        note += ", so no 529 deduction has material Illinois effect"
     return {
         "label": "Illinois 529 (Bright Start / Bright Directions) subtraction",
         "source": "IL-1040 Schedule M",
         "jurisdiction": "Illinois",
         "amount": None,
         "document_id": doc_id,
-        "note": "No 529/college-savings subtraction appears in the filed IL-1040 package.",
+        "note": note,
     }
 
 
@@ -179,6 +206,8 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
     doc_refs: list[dict] = []
     deductions: list[dict] = []
     il_doc_id: str | None = None
+    fed_fvals: dict[str, object] | None = None
+    il_fvals: dict[str, object] | None = None
 
     for doc in sorted(docs, key=lambda d: d.original_filename):
         fvals = _facts_map(facts_by_doc.get(doc.id, []))
@@ -225,8 +254,10 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
             # Deductions & adjustments the filed package shows, with the
             # jurisdiction each one actually reduces.
             deductions.extend(_deduction_entries(doc.id, fvals))
+            fed_fvals = fvals
         elif ft is FormType.f1040_il:
             il_doc_id = doc.id
+            il_fvals = fvals
             as_filed_states.append({
                 "name": _STATE_NAMES.get(doc.form_type.value, doc.form_type.value),
                 "taxable_income": _num(fvals.get("il_taxable_income")),
@@ -247,7 +278,7 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
     if il_doc_id is not None and not any(
         d["jurisdiction"] == "Illinois" for d in deductions
     ):
-        deductions.append(_il_529_entry(il_doc_id))
+        deductions.append(_il_529_entry(il_doc_id, il_fvals))
     total_wages = round(sum(p["wages"] or 0 for p in salary_people), 2)
     total_fed_wh = round(sum(p["fed_withholding"] or 0 for p in salary_people), 2)
     total_state_wh = round(sum(p["state_withholding"] or 0 for p in salary_people), 2)
@@ -257,6 +288,74 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
         (i.get(k) or 0) for i in investments
         for k in ("st_realized_gain", "st_realized_loss", "lt_realized_gain", "lt_realized_loss")
     ), 2)
+
+    # Dependents from Schedule 8812 (count only — the credit ride-along makes
+    # the count derivable without ever storing a name).
+    dependents: dict | None = None
+    if fed_fvals:
+        children = _num(fed_fvals.get("ret_fed_ctc_children"))
+        if children is not None:
+            dependents = {
+                "qualifying_children": int(children),
+                "ctc_claimed": _num(fed_fvals.get("ret_fed_ctc_credit")),
+            }
+
+    # As-filed cross-check: the return's own income composition (Form 1040
+    # page 1, parsed with arithmetic gates) vs what the documents on file add
+    # up to. Differences are surfaced, never silently reconciled.
+    crosscheck: list[dict] = []
+    if fed_fvals:
+        dividends_docs = round(sum(
+            s["dividends_ordinary"] or 0 for s in investments if s["dividends_ordinary"]
+        ), 2)
+        rows = [
+            ("Wages", "ret_fed_wages", total_wages),
+            ("Taxable interest", "ret_fed_taxable_interest", total_interest),
+            ("Ordinary dividends", "ret_fed_dividends_ordinary", dividends_docs),
+            ("Additional income", "ret_fed_additional_income", total_side),
+            ("Capital gain/loss", "ret_fed_capital_gain_loss", net_realized),
+        ]
+        for label, code, docs_val in rows:
+            as_filed = _num(fed_fvals.get(code))
+            if as_filed is None or docs_val is None:
+                continue
+            diff = round(as_filed - docs_val, 2)
+            note = None
+            if label == "Ordinary dividends" and abs(diff) > 1:
+                note = ("as-filed exceeds the 1099-DIV documents on file — a dividend "
+                        "payer is likely missing from the document set")
+                qualified = _num(fed_fvals.get("ret_fed_dividends_qualified"))
+                qualified_docs = round(sum(
+                    s["dividends_qualified"] or 0 for s in investments if s["dividends_qualified"]
+                ), 2)
+                if qualified is not None and qualified_docs:
+                    note += (
+                        f" (qualified: ${qualified:,.0f} as filed vs "
+                        f"${qualified_docs:,.2f} on file)"
+                    )
+            elif label == "Capital gain/loss" and abs(diff) > 1:
+                cap_net = _num(fed_fvals.get("ret_fed_capital_loss_net"))
+                cap_limit = _num(fed_fvals.get("ret_fed_capital_loss_limit"))
+                if cap_net is not None and cap_limit is not None:
+                    carry = round(abs(cap_net) - cap_limit, 2)
+                    adjustments = round(docs_val - cap_net, 2)
+                    note = (
+                        f"the applied loss is the statutory ${cap_limit:,.0f} limit; "
+                        f"Schedule D as filed shows a ${abs(cap_net):,.2f} net loss "
+                        f"(Form 8949 adjustments {adjustments:+,.2f} vs the document-basis "
+                        f"net) and ${carry:,.2f} carries to {year + 1}"
+                    )
+            elif abs(diff) <= 0.005:
+                note = "matches the documents on file"
+            elif abs(diff) <= 1:
+                note = "ties within e-file rounding"
+            crosscheck.append({
+                "label": label,
+                "as_filed": as_filed,
+                "documents": docs_val,
+                "difference": diff,
+                "note": note,
+            })
 
     # Derived ratios — arithmetic over two as-filed numbers, never a computation
     # of tax. Fed withholding coverage uses salary withholding only (the docs
@@ -308,8 +407,9 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
             "derived": derived or None,
         },
         "deductions": deductions,
+        "as_filed_crosscheck": crosscheck,
         "hourly": None,  # lights up when a final-of-year paystub (with hours) is on file
-        "dependents": None,  # needs a column-aware parse of the 1040 dependents table
+        "dependents": dependents,
         "informational": informational,
         "documents": doc_refs,
     }

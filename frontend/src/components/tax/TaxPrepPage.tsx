@@ -232,6 +232,41 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
       )}
 
 
+      {summary && summary.dependents && (
+        <section className="tax-section">
+          <h3>Dependents (Schedule 8812)</h3>
+          <div className="tax-kv">
+            <span>Qualifying children — child tax credit</span>
+            <span>
+              {summary.dependents.qualifying_children}
+              {summary.dependents.ctc_claimed != null &&
+                ` · CTC ${fmt(summary.dependents.ctc_claimed)}`}
+            </span>
+          </div>
+        </section>
+      )}
+
+      {summary && summary.as_filed_crosscheck.length > 0 && (
+        <section className="tax-section">
+          <h3>As-filed cross-check — return vs documents</h3>
+          {summary.as_filed_crosscheck.map((r) => (
+            <div className="tax-kv-block" key={r.label}>
+              <div className="tax-kv">
+                <span>{r.label}</span>
+                <span>
+                  {fmt(r.as_filed)} <span className="tax-ded-source">vs</span>{" "}
+                  {fmt(r.documents)}
+                </span>
+              </div>
+              <div className="tax-ded-meta">
+                <span className="tax-ded-source">difference {fmt(r.difference)}</span>
+                {r.note && <span className="tax-ded-note">{r.note}</span>}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
       <section className="tax-section">
         <h3>Salary</h3>
         {summary && summary.salary.people.length > 0 ? (

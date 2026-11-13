@@ -361,6 +361,19 @@ export interface TaxDeduction {
   note: string | null;
 }
 
+export interface TaxCrosscheckRow {
+  label: string;
+  as_filed: number;
+  documents: number;
+  difference: number;
+  note: string | null;
+}
+
+export interface TaxDependents {
+  qualifying_children: number;
+  ctc_claimed: number | null;
+}
+
 export interface TaxDocRef {
   id: string;
   filename: string;
@@ -398,8 +411,9 @@ export interface TaxYearSummary {
     derived: TaxAsFiledDerived | null;
   };
   deductions: TaxDeduction[];
+  as_filed_crosscheck: TaxCrosscheckRow[];
   hourly: unknown | null;
-  dependents: unknown | null;
+  dependents: TaxDependents | null;
   informational: { form_type: string; label: string | null; document_id: string }[];
   documents: TaxDocRef[];
 }

@@ -140,3 +140,30 @@ test("tax prep 2025 shows the HSA and 529 deductions with their jurisdictions", 
   await expect(il.locator(".tax-ded-badge")).toHaveText("Illinois");
   await expect(il).toContainText("none on file");
 });
+
+test("tax prep 2025 cross-checks the return against the documents", async ({
+  page,
+}) => {
+  await page.goto("/tax");
+
+  // Dependents from Schedule 8812 (count only).
+  await expect(
+    page.locator(".tax-section", { hasText: "Dependents (Schedule 8812)" }),
+  ).toContainText("Qualifying children");
+
+  // The cross-check: wages/interest tie, the dividend gap is surfaced, and
+  // the capital row explains the statutory loss limit.
+  const xc = page.locator(".tax-section", {
+    hasText: "As-filed cross-check",
+  });
+  await expect(xc).toBeVisible();
+  await expect(
+    xc.locator(".tax-kv-block", { hasText: "Ordinary dividends" }),
+  ).toContainText("3,863.41");
+  await expect(
+    xc.locator(".tax-kv-block", { hasText: "Ordinary dividends" }),
+  ).toContainText("missing from the document set");
+  await expect(
+    xc.locator(".tax-kv-block", { hasText: "Capital gain/loss" }),
+  ).toContainText("1,658");
+});

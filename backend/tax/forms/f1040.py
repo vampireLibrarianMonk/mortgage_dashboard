@@ -29,6 +29,17 @@ _FIELD_LABELS = {
     "ret_st_va_standard_deduction": "As-filed Virginia standard deduction (VA 760 line 11)",
     "ret_st_va_exemptions": "As-filed Virginia exemptions (VA 760 line 12)",
     "ret_st_va_529_deduction": "As-filed Virginia line-13 deductions (Virginia529 deduction when claimed)",
+    "ret_fed_wages": "As-filed wages (Form 1040 line 1a)",
+    "ret_fed_taxable_interest": "As-filed taxable interest (Form 1040 line 2b)",
+    "ret_fed_dividends_qualified": "As-filed qualified dividends (Form 1040 line 3a)",
+    "ret_fed_dividends_ordinary": "As-filed ordinary dividends (Form 1040 line 3b)",
+    "ret_fed_capital_gain_loss": "As-filed capital gain or loss (Form 1040 line 7a)",
+    "ret_fed_additional_income": "As-filed additional income (Form 1040 line 8 / Schedule 1 line 10)",
+    "ret_fed_total_income": "As-filed total income (Form 1040 line 9)",
+    "ret_fed_capital_loss_net": "As-filed net capital loss (Schedule D line 16)",
+    "ret_fed_capital_loss_limit": "As-filed capital loss deduction limit (Schedule D line 21)",
+    "ret_fed_ctc_children": "As-filed qualifying children for the child tax credit (Schedule 8812 line 4)",
+    "ret_fed_ctc_credit": "As-filed child tax credit claimed (Schedule 8812 line 14)",
 }
 
 # Summary rows: matched on the label with a dollar amount at end-of-line (the
@@ -70,6 +81,35 @@ _F8889_FOOTER = re.compile(r"Form 8889 \(2025\) Created", re.I)
 _BAA_STAMP = re.compile(r"BAA REV")
 _VA760CG_HEADER = re.compile(r"VA760CG")
 _VA_STAMP = re.compile(r"REV \d{2}/\d{2}/\d{2}")
+
+# Signed value runs (the 1040 page-1 income run carries negative losses as
+# '-3,000.', Schedule D's as '(4,658.)' style).
+_SIGNED_MONEY = re.compile(r"-?\(?\d[\d,]*\.\d{0,2}\)?")
+_F1040_P1_FOOTER = re.compile(r"Form 1040 \(2025\) Created", re.I)
+_SCH1_P1_FOOTER = re.compile(r"Schedule 1 \(Form 1040\) 2025 Created", re.I)
+_SCHED_D_P2_FOOTER = re.compile(r"^Schedule D \(Form 1040\) 2025$")
+_CTC_MULTIPLIER = re.compile(r"Multiply line 4 by \$([\d,]+)")
+_CTC_FOOTER = re.compile(r"Schedule 8812 \(Form 1040\) 2025 Created", re.I)
+
+
+def _signed_value(token: str) -> float:
+    """'-3,000.' -> -3000.0; '(3,000.)' -> -3000.0; '279,469.' -> 279469.0."""
+    neg = token.startswith("-") or token.startswith("(")
+    digits = token.strip("()").lstrip("-").replace(",", "")
+    val = float(digits) if digits not in ("", ".") else 0.0
+    return -val if neg else val
+
+
+def _signed_cluster(
+    lines: list[str], start_idx: int, stop_pat: re.Pattern[str], max_lines: int = 40
+) -> list[float]:
+    """Signed money tokens printed after `lines[start_idx]` until the stop stamp."""
+    tokens: list[float] = []
+    for ln in lines[start_idx + 1 : start_idx + 1 + max_lines]:
+        if stop_pat.search(ln):
+            break
+        tokens.extend(_signed_value(t) for t in _SIGNED_MONEY.findall(ln))
+    return tokens
 
 
 def _money_cluster(
@@ -281,6 +321,115 @@ def extract_f1040_facts(
                     add(f"ret_fed_hsa_employer_contrib_{who}",
                         _FIELD_LABELS[f"ret_fed_hsa_employer_contrib_{who}"],
                         f"{cluster[1]:.2f}", conf=0.9)
+
+        # Schedule 1 Part I's footer cluster: its LAST token is line 10 (the
+        # additional-income total — the last row of Part I, in visual order).
+        # Used purely as a cross-document gate for the 1040 page-1 parse below;
+        # line 3 vs 8f cannot be told apart inside the cluster, so no per-line
+        # fact is lifted from it (the 2025 return proved that ambiguity real).
+        sch1_total: float | None = None
+        for i, ln in enumerate(lines):
+            if _SCH1_P1_FOOTER.search(ln):
+                run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=8)
+                if run:
+                    sch1_total = run[-1]
+                break
+
+        # Form 1040 page 1's income run: [1a, 1h, 1z, 2b, 3a, 3b, 7a, 8, 9,
+        # 11a] as filled on this return. Stored only when every arithmetic
+        # identity checks out (1z = 1a + 1h; line 9 = 1z + 2b + 3b + 7a + 8;
+        # AGI = line 9 with zero Schedule 1 adjustments; line 8 equals the
+        # Schedule 1 line-10 total; AGI equals the summary-block AGI).
+        agi_val = next(
+            (
+                float(str(f.value).replace(",", ""))
+                for f in facts
+                if f.field_code == "ret_agi"
+            ),
+            None,
+        )
+        for i, ln in enumerate(lines):
+            if not _F1040_P1_FOOTER.search(ln):
+                continue
+            run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=16)
+            if len(run) == 10:
+                wages, other, wages_total, interest, div_q, div_o, capital = run[:7]
+                additional, total_income, agi = run[7:]
+                checks = (
+                    abs(wages_total - (wages + other)) <= 0.005
+                    and abs(total_income - (wages_total + interest + div_o + capital + additional)) <= 0.005
+                    and abs(agi - total_income) <= 0.005
+                    and sch1_total is not None
+                    and abs(additional - sch1_total) <= 0.005
+                    and agi_val is not None
+                    and abs(agi - agi_val) <= 0.005
+                )
+                if checks:
+                    for code, val in (
+                        ("ret_fed_wages", wages),
+                        ("ret_fed_taxable_interest", interest),
+                        ("ret_fed_dividends_qualified", div_q),
+                        ("ret_fed_dividends_ordinary", div_o),
+                        ("ret_fed_capital_gain_loss", capital),
+                        ("ret_fed_additional_income", additional),
+                        ("ret_fed_total_income", total_income),
+                    ):
+                        add(code, _FIELD_LABELS[code], f"{val:.2f}", conf=0.9)
+            break
+
+        # Schedule D page 2's footer run: [line 16 net capital loss (signed),
+        # line 21 loss limit]. The applied 1040 line-7a loss is the statutory
+        # limit; anything beyond it carries forward — derived in the summary.
+        for i, ln in enumerate(lines):
+            if not _SCHED_D_P2_FOOTER.search(ln):
+                continue
+            run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=8)
+            if len(run) == 2 and run[0] < 0 and run[1] > 0 and abs(run[0]) >= run[1]:
+                add("ret_fed_capital_loss_net", _FIELD_LABELS["ret_fed_capital_loss_net"],
+                    f"{run[0]:.2f}", conf=0.9)
+                add("ret_fed_capital_loss_limit", _FIELD_LABELS["ret_fed_capital_loss_limit"],
+                    f"{run[1]:.2f}", conf=0.9)
+            break
+
+        # Schedule 8812's footer run: the qualifying-children count rides on
+        # line 5 ("Multiply line 4 by $2,200" — the multiplier is read from the
+        # form's own text so the divisor is never hardcoded). Count only, no
+        # names — line 5 / multiplier.
+        multiplier: float | None = None
+        for ln in lines:
+            m = _CTC_MULTIPLIER.search(ln)
+            if m:
+                multiplier = float(m.group(1).replace(",", ""))
+                break
+        if multiplier and multiplier > 0:
+            for i, ln in enumerate(lines):
+                if not _CTC_FOOTER.search(ln):
+                    continue
+                run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=20)
+                pair = next(
+                    (
+                        j
+                        for j in range(len(run) - 3)
+                        if run[j] > 50000 and abs(run[j + 3] - run[j]) <= 0.005
+                    ),
+                    None,
+                )
+                if pair is not None and pair + 4 < len(run):
+                    line5, credit = run[pair + 4], run[-1]
+                    if (
+                        line5 > 0
+                        and abs(line5 % multiplier) <= 0.005
+                        and abs(credit % multiplier) <= 0.005
+                        and credit <= line5
+                    ):
+                        count = int(round(line5 / multiplier))
+                        if 1 <= count <= 10:
+                            add("ret_fed_ctc_children",
+                                _FIELD_LABELS["ret_fed_ctc_children"], str(count),
+                                conf=0.9, money=False)
+                            add("ret_fed_ctc_credit", _FIELD_LABELS["ret_fed_ctc_credit"],
+                                f"{credit:.2f}", conf=0.9)
+                break
 
     facts.sort(key=lambda f: f.field_code)
     return facts
