@@ -97,6 +97,12 @@ Open **http://app.mortgage-dashboard/**.
   `Stop-ScheduledTask -TaskName MortgageDashboard-Apps; Start-ScheduledTask -TaskName
   MortgageDashboard-Apps` (Windows PowerShell 5.x has no `Restart-ScheduledTask`).
 - **Backend code changes** are picked up on the next app restart / logon.
+  - **Gotcha (confirmed 2026-11):** the apps task runs at **RunLevel Highest**, and
+    `uvicorn` detaches from it — so `Stop-ScheduledTask` + `Start-ScheduledTask`
+    from a non-elevated shell **silently leaves the old process serving** (the new
+    instance can't bind the port and exits). Restart from an **elevated** shell
+    (`Start-Process powershell -Verb RunAs -ArgumentList '-Command "taskkill /F /PID <pid>; Start-ScheduledTask -TaskName MortgageDashboard-Apps"'`),
+    or sign out/in.
 
 ## Adding another app
 

@@ -1,3 +1,9 @@
+# Playwright e2e run artifacts (logs + screenshots)
+frontend/npm-pw.log
+frontend/pw-browser.log
+frontend/pw-test.log
+frontend/e2e/artifacts/
+
 # Python
 __pycache__/
 *.py[cod]
