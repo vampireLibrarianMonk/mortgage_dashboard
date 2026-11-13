@@ -157,6 +157,28 @@ FEDERAL_SAMPLE = (
     "Return | Total Payments/Credits                  $     35,287.00\n"
     "Refund | Amount of line 34 you want refunded to you $ 12,345.00\n"
     "Married filing jointly\n"
+    # Form 1040 page 1's income run (lines 1a/1h/1z/2b/3a/3b/7a/8/9/11a, with
+    # the capital loss signed) + Schedule 1 Part I's footer cluster (line 10
+    # total = 240, the cross-document gate for the line-8 value).
+    "For Disclosure, Privacy Act, and Paperwork Reduction Act Notice, see separate instructions. Form 1040 (2025) Created 9/5/25\n"
+    "279,469.\n0.\n279,469.\n580.\n1,908. 5,530.\n-3,000.\n240.\n282,819.\n282,819.\n"
+    "BAA REV 03/25/26 TTO\n"
+    "For Paperwork Reduction Act Notice. Schedule 1 (Form 1040) 2025 Created 7/25/25\n"
+    "240.\n"
+    "240.\n"
+    "BAA REV 03/25/26 TTO\n"
+    # Schedule D page 2's footer run: line 16 net loss (signed) then the
+    # statutory line-21 limit.
+    "Schedule D (Form 1040) 2025\n"
+    "-4,658.\n"
+    "3,000.\n"
+    "BAA REV 03/25/26 TTO\n"
+    # Schedule 8812's footer run: line 1/3 AGI pair, line 5 = $2,200 x 1
+    # qualifying child, line 14 = the $2,200 credit claimed.
+    "5 Multiply line 4 by $2,200 . . . . . 5\n"
+    "For Paperwork Reduction Act Notice. Schedule 8812 (Form 1040) 2025 Created 7/30/25\n"
+    "282,819.\n0.\n0.\n282,819.\n2,200.\n2,200.\n400,000.\n0.\n0.\n2,200.\n45,826.\n2,200.\n"
+    "BAA REV 03/25/26 TTO\n"
     # Form 8889 per spouse: the e-file print's value cluster — lines 3/5/6/8
     # (8,550 family limit), 9/11 employer contributions 4,495, line 12 limit
     # 4,055, line 13 HSA deduction 0. Note: Schedule 1's own footer cluster is
@@ -232,6 +254,28 @@ def test_f1040_va529_deduction_from_760cg():
     assert by["ret_st_va_standard_deduction"].value == "17500.00"
     assert by["ret_st_va_exemptions"].value == "2790.00"
     assert by["ret_st_va_fagi"].value == "282819.00"
+
+
+def test_f1040_income_composition_capital_loss_and_dependents():
+    facts = extract_f1040_facts("doc4", 2025, native(FEDERAL_SAMPLE))
+    by = {f.field_code: f for f in facts}
+    # The 1040 page-1 income run, stored only after every arithmetic identity
+    # (1z = 1a + 1h; line 9 = 1z + 2b + 3b + 7a + 8; AGI = line 9; line 8 =
+    # Schedule 1 line 10; AGI = the summary-block AGI) passes.
+    assert by["ret_fed_wages"].value == "279469.00"
+    assert by["ret_fed_taxable_interest"].value == "580.00"
+    assert by["ret_fed_dividends_qualified"].value == "1908.00"
+    assert by["ret_fed_dividends_ordinary"].value == "5530.00"
+    assert by["ret_fed_capital_gain_loss"].value == "-3000.00"
+    assert by["ret_fed_additional_income"].value == "240.00"
+    assert by["ret_fed_total_income"].value == "282819.00"
+    # Schedule D: the as-filed net loss and the statutory limit (the applied
+    # 1040 line-7a loss); the carryforward is derived downstream.
+    assert by["ret_fed_capital_loss_net"].value == "-4658.00"
+    assert by["ret_fed_capital_loss_limit"].value == "3000.00"
+    # Schedule 8812: one qualifying child ($2,200 x 1) -> CTC claimed 2,200.
+    assert by["ret_fed_ctc_children"].value == "1"
+    assert by["ret_fed_ctc_credit"].value == "2200.00"
 
 
 # --- as-filed Illinois return (native text) -----------------------------------

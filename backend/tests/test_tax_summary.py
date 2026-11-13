@@ -60,6 +60,8 @@ def test_summary_salary_investments_and_as_filed():
             ("div_5_section_199a", "20.36"),
             ("b_boxa_st_realized_gain", "1919.97"),
             ("b_boxa_st_realized_loss", "-2814.31"),
+            ("b_boxd_lt_realized_gain", "17.00"),
+            ("b_boxd_lt_realized_loss", "-5960.30"),
         ], FormType.f1099_div),
         nec.id: facts_for(nec, [("box_1_nonemployee_comp", "240.00")], FormType.f1099_nec),
         ret.id: facts_for(ret, [
@@ -70,6 +72,16 @@ def test_summary_salary_investments_and_as_filed():
             ("ret_fed_hsa_deduction_limit", "8110.00"),
             ("ret_fed_hsa_employer_contrib_you", "4495.00"),
             ("ret_fed_hsa_employer_contrib_spouse", "4495.00"),
+            ("ret_fed_wages", "279469.00"),
+            ("ret_fed_taxable_interest", "580.00"),
+            ("ret_fed_dividends_qualified", "1908.00"),
+            ("ret_fed_dividends_ordinary", "5530.00"),
+            ("ret_fed_capital_gain_loss", "-3000.00"),
+            ("ret_fed_additional_income", "240.00"),
+            ("ret_fed_capital_loss_net", "-4658.00"),
+            ("ret_fed_capital_loss_limit", "3000.00"),
+            ("ret_fed_ctc_children", "1"),
+            ("ret_fed_ctc_credit", "2200.00"),
             ("ret_st_va_state_name", "Virginia"),
             ("ret_st_va_taxable_income", "258529.00"),
             ("ret_st_va_total_tax", "14349.00"),
@@ -93,7 +105,7 @@ def test_summary_salary_investments_and_as_filed():
     assert s["salary"]["total_state_withholding"] == 14471.57
     assert s["investments"]["total_interest"] == 580.45
     assert s["investments"]["statements"][0]["payer"] == "Navy Federal"
-    assert s["investments"]["net_realized_gain_loss"] == -894.34
+    assert s["investments"]["net_realized_gain_loss"] == -6837.64
     assert s["side_income"]["entries"][0]["payer"] == "Fay Nutrition"
     assert s["side_income"]["total"] == 240.00
     assert s["as_filed"]["federal"]["agi"] == 282819.00
@@ -108,19 +120,38 @@ def test_summary_salary_investments_and_as_filed():
 
     # Deductions & adjustments, each tagged with the jurisdiction it reduces:
     # the HSA deduction was claimed at 0 (payroll-funded contributions), the
-    # 529 deduction is Virginia-only, and the IL return carries no 529
-    # subtraction in its filed package.
+    # capital loss is the statutory limit with the excess carried forward, the
+    # 529 deduction is Virginia-only, and the IL return carries no verifiable
+    # 529 subtraction in its filed package.
     ded = s["deductions"]
     assert [(d["jurisdiction"], d["amount"]) for d in ded] == [
-        ("Federal", 0.0), ("Virginia", 4000.0), ("Illinois", None),
+        ("Federal", 0.0), ("Federal", 3000.0), ("Virginia", 4000.0), ("Illinois", None),
     ]
     assert ded[0]["label"] == "Health savings account deduction"
     assert "payroll" in ded[0]["note"]
     assert "8,110" in ded[0]["note"]
-    assert ded[1]["label"] == "Virginia529 college savings deduction"
-    assert "not deductible on the federal return" in ded[1]["note"]
-    assert ded[2]["label"].startswith("Illinois 529")
-    assert ded[2]["amount"] is None
+    assert ded[1]["label"] == "Capital loss deduction (statutory limit)"
+    assert "1,658" in ded[1]["note"]  # $4,658 net loss - $3,000 limit
+    assert ded[2]["label"] == "Virginia529 college savings deduction"
+    assert "not deductible on the federal return" in ded[2]["note"]
+    assert ded[3]["label"].startswith("Illinois 529")
+    assert ded[3]["amount"] is None
+    assert "no readable text layer" in ded[3]["note"]  # the IL schedules are font-garbled
+
+    # Dependents from Schedule 8812 (count only, no names).
+    assert s["dependents"] == {"qualifying_children": 1, "ctc_claimed": 2200.0}
+
+    # As-filed cross-check: wages/interest tie within rounding, the dividend
+    # gap is surfaced (as-filed 5,530 vs 1,666.59 on file), and the capital
+    # row explains the statutory loss limit.
+    xc = {r["label"]: r for r in s["as_filed_crosscheck"]}
+    assert abs(xc["Wages"]["difference"]) <= 1
+    assert abs(xc["Taxable interest"]["difference"]) <= 1
+    assert xc["Ordinary dividends"]["difference"] == 3863.41
+    assert "missing from the document set" in xc["Ordinary dividends"]["note"]
+    assert xc["Capital gain/loss"]["difference"] == 3837.64
+    assert "1,658" in xc["Capital gain/loss"]["note"]
+    assert xc["Additional income"]["difference"] == 0.0
 
     derived = s["as_filed"]["derived"]
     assert derived["effective_rate"] == round(44076.00 / 282819.00, 4)
@@ -136,6 +167,8 @@ def test_summary_empty_year_is_an_honest_skeleton():
     assert s["as_filed"]["states"] == []
     assert s["as_filed"]["derived"] is None
     assert s["deductions"] == []
+    assert s["as_filed_crosscheck"] == []
+    assert s["dependents"] is None
     assert s["documents"] == []
 
 
