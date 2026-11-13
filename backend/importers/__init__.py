@@ -61,7 +61,12 @@ class ImportedTxn:
     transaction_id: str
     date: str  # posted date, ISO "YYYY-MM-DD"
     name: str
-    amount: float  # negative = money out, positive = money in (Plaid convention)
+    # Statement-native sign (e.g. PayPal: purchases negative, credits positive).
+    # to_store_dict() flips NON-OFFSET rows to the store's expense-positive
+    # convention (synced Plaid debits are stored positive - see
+    # console_routes._cmd_sync); offset rows are already card debits in
+    # statement sign and are kept as-is.
+    amount: float
     authorized_date: str | None = None
     merchant: str = ""
     bank: str = ""
@@ -90,6 +95,17 @@ class ImportedTxn:
     def to_store_dict(self) -> dict:
         """Render into the dict shape `upsert_transactions` consumes."""
         eff = self.effective_date
+        # The store's convention is expense-positive: synced Plaid debits are
+        # stored positive and credits negative (see console_routes._cmd_sync).
+        # Statement readers emit the statement's native sign, which for PayPal
+        # is the opposite (purchases negative, credits/refunds positive), so
+        # negate non-offset rows here - otherwise a purchase would SUBTRACT
+        # from its category in actuals instead of adding to it. Offset rows
+        # (e.g. a "General Credit Card Deposit" that debits the linked card)
+        # are already outflows in statement sign, so keep them as-is.
+        amount = float(self.amount)
+        if not self.offset:
+            amount = -amount
         return {
             "transaction_id": self.transaction_id,
             "date": self.date,
@@ -98,7 +114,7 @@ class ImportedTxn:
             "month": eff.month,
             "name": self.name,
             "merchant": self.merchant,
-            "amount": float(self.amount),
+            "amount": amount,
             "bank": self.bank,
             "account_id": self.account_id,
             "account_mask": self.account_mask,
