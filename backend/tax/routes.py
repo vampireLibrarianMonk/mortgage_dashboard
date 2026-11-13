@@ -22,6 +22,13 @@ from fastapi.responses import Response
 from tax import storage
 from tax.classify import classify_form
 from tax.extraction.providers import get_provider
+from tax.forms.f1040 import extract_f1040_facts
+from tax.forms.f1095_c import extract_f1095_c_facts
+from tax.forms.f1099_combined import extract_f1099_combined_facts
+from tax.forms.f1099_int import extract_f1099_int_facts
+from tax.forms.f1099_nec import extract_f1099_nec_facts
+from tax.forms.f3922 import extract_f3922_facts
+from tax.forms.il_1040 import extract_il_1040_facts
 from tax.forms.paystub import extract_paystub_facts, parse_paystub, rebuild_year
 from tax.forms.w2 import extract_w2_facts
 from tax.models import DocStage, ExtractionMethod, FactStatus, FormType
@@ -171,6 +178,23 @@ def extract_document(
         taxpayer = _person_from_name(reading.employee_name) or _person_from_filename(
             doc.original_filename
         )
+    elif form_type is FormType.f1099_int:
+        facts = extract_f1099_int_facts(doc_id, year, kvs, method=method)
+    elif form_type is FormType.f1099_nec:
+        facts = extract_f1099_nec_facts(doc_id, year, kvs, method=method)
+    elif form_type is FormType.f1099_div:
+        facts = extract_f1099_combined_facts(doc_id, year, kvs, method=method)
+    elif form_type is FormType.f1095_c:
+        facts = extract_f1095_c_facts(doc_id, year, kvs, method=method)
+    elif form_type is FormType.f3922:
+        facts = extract_f3922_facts(doc_id, year, kvs, method=method)
+    elif form_type is FormType.f1040:
+        facts = extract_f1040_facts(doc_id, year, kvs, method=method)
+    elif form_type is FormType.f1040_il:
+        facts = extract_il_1040_facts(doc_id, year, kvs, method=method)
+
+    if taxpayer is None:
+        taxpayer = _person_from_filename(doc.original_filename)
 
     if facts:
         storage.save_facts(year, doc_id, facts)
@@ -186,7 +210,7 @@ def extract_document(
             "like a scanned document. Enable AWS Textract to read its boxes."
         )
     elif form_type is FormType.unknown and kvs:
-        note = "Content did not match a supported form type (W-2 / paystub so far)."
+        note = "Content did not match a supported form type (W-2, paystub, 1099s, 1095-C, 3922, 1040/IL-1040 so far)."
     elif form_type is FormType.w2 and not facts:
         note = "Classified as W-2 but no boxes could be mapped from the content."
 

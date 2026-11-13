@@ -34,6 +34,8 @@ class FormType(str, Enum):
     f1098 = "1098"
     f1095_c = "1095-C"
     f3922 = "3922"
+    f1040 = "1040"
+    f1040_il = "IL-1040"
     ssa_1099 = "SSA-1099"
     k1 = "K-1"
     paystub = "Paystub"
