@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, Body, File, UploadFile
+from fastapi import APIRouter, Body, File, Query, UploadFile
 from fastapi.responses import Response
 
 from tax import storage
@@ -41,6 +41,19 @@ router = APIRouter(prefix="/tax", tags=["tax"])
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
 _MIME = {"pdf": "application/pdf", "png": "image/png", "jpeg": "image/jpeg"}
+
+_DEFAULT_SUMMARY_YEARS = "2023,2024,2025,2026"
+
+
+@router.get("/summary")
+def tax_summary(years: str = Query(_DEFAULT_SUMMARY_YEARS)):
+    """Facts-only tax picture for one or more years (salary, investments,
+    side income, as-filed results). Deterministic aggregation of stored
+    TaxFacts — nothing is computed or estimated here."""
+    from tax import summary
+
+    requested = sorted({int(y) for y in years.split(",") if y.strip().isdigit()})
+    return {"ok": True, "years": summary.summaries_for_years(requested)}
 
 
 async def _read_upload(upload: UploadFile) -> tuple[str, bytes]:

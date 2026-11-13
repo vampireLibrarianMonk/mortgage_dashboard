@@ -1,10 +1,11 @@
-import type {
+﻿import type {
   CalculateRequest,
   CalculateResponse,
   DocStage,
   HouseholdReconciliation,
   TaxDocument,
   TaxFact,
+  TaxYearSummary,
   TaxFormType,
 } from "./types";
 
@@ -89,7 +90,7 @@ export interface InitialHouseRepairItem {
   vendor: string; // clean payee, e.g. "Reddick & Sons"
   work: string; // what the repair was, e.g. "HVAC replacement"
   source: string; // provenance, e.g. "NFCU ACH (bank)" / "Invoice 1667 (email)"
-  label: string; // "Vendor — work" fallback for print/back-compat
+  label: string; // "Vendor â€” work" fallback for print/back-compat
   name?: string; // raw transaction name (debug/back-compat)
 }
 
@@ -332,7 +333,7 @@ export async function balancesRefresh(): Promise<BalanceSnapshotAccount[]> {
   return (data.accounts ?? []) as BalanceSnapshotAccount[];
 }
 
-// --- Tax Prep (Phase 1: document foundation — upload/list/view/delete) ---
+// --- Tax Prep (Phase 1: document foundation â€” upload/list/view/delete) ---
 
 export interface TaxUploadResult {
   ok: boolean;
@@ -356,6 +357,13 @@ export async function taxListDocuments(year: number): Promise<TaxDocument[]> {
   if (!res.ok) throw new Error(`tax list failed: ${res.status}`);
   const data = await res.json();
   return (data.documents ?? []) as TaxDocument[];
+}
+
+export async function taxGetSummary(years: number[]): Promise<TaxYearSummary[]> {
+  const res = await fetch(`${API_BASE}/tax/summary?years=${years.join(",")}`);
+  if (!res.ok) throw new Error(`tax summary failed: ${res.status}`);
+  const data = await res.json();
+  return (data.years ?? []) as TaxYearSummary[];
 }
 
 export async function taxPreviewDocument(year: number, file: File): Promise<TaxPreviewResult> {
@@ -385,7 +393,7 @@ export async function taxDeleteDocument(year: number, id: string): Promise<void>
   if (!res.ok) throw new Error(`tax delete failed: ${res.status}`);
 }
 
-// URL for the in-app viewer (original bytes, inline). Not fetched here — passed
+// URL for the in-app viewer (original bytes, inline). Not fetched here â€” passed
 // to an <img>/<iframe> src.
 export function taxDocumentRawUrl(year: number, id: string): string {
   return `${API_BASE}/tax/${year}/documents/${id}/raw`;
@@ -451,7 +459,7 @@ export async function taxVerifyFact(
   return (data.fact ?? null) as TaxFact | null;
 }
 
-// --- Phase 3: household W-2 ↔ paystub reconciliation ---
+// --- Phase 3: household W-2 â†” paystub reconciliation ---
 
 export interface TaxReconcileResult {
   ok: boolean;

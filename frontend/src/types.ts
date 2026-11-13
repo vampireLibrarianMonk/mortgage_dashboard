@@ -288,6 +288,105 @@ export interface AmortizationPoint {
 // --- Tax Prep (see new_spec/tax_prep_tab_design.md) ---
 // Phase 1 is the document foundation only — no extraction/calc/AI yet.
 
+// Tax Year Summary — facts-only aggregation served by GET /tax/summary.
+export interface TaxSalaryPerson {
+  person: string | null;
+  employer: string | null;
+  wages: number | null;
+  fed_withholding: number | null;
+  ss_wages: number | null;
+  medicare_wages: number | null;
+  state: string | null;
+  state_withholding: number | null;
+  document_id: string;
+}
+
+export interface TaxInvestmentStatement {
+  payer: string | null;
+  interest: number | null;
+  interest_fed_withheld: number | null;
+  dividends_ordinary: number | null;
+  dividends_qualified: number | null;
+  dividends_199a: number | null;
+  nondividend_distributions: number | null;
+  st_realized_gain: number | null;
+  st_realized_loss: number | null;
+  lt_realized_gain: number | null;
+  lt_realized_loss: number | null;
+  document_id: string;
+}
+
+export interface TaxSideIncomeEntry {
+  payer: string | null;
+  person: string | null;
+  amount: number | null;
+  fed_withheld: number | null;
+  state: string | null;
+  document_id: string;
+}
+
+export interface TaxAsFiledFederal {
+  agi: number | null;
+  taxable_income: number | null;
+  total_tax: number | null;
+  total_payments: number | null;
+  balance_due: number | null;
+  refund: number | null;
+  filing_status: string | null;
+  document_id: string;
+}
+
+export interface TaxAsFiledState {
+  name: string;
+  taxable_income: number | null;
+  total_tax: number | null;
+  balance_due: number | null;
+  document_id: string;
+}
+
+export interface TaxAsFiledDerived {
+  effective_rate: number | null;
+  withholding_coverage: number | null;
+  withholding_shortfall: number | null;
+}
+
+export interface TaxDocRef {
+  id: string;
+  filename: string;
+  form_type: string;
+  stage: string;
+  taxpayer: string | null;
+}
+
+export interface TaxYearSummary {
+  year: number;
+  has_documents?: boolean;
+  salary: {
+    people: TaxSalaryPerson[];
+    total_wages: number;
+    total_fed_withholding: number;
+    total_state_withholding: number;
+  };
+  investments: {
+    statements: TaxInvestmentStatement[];
+    total_interest: number;
+    net_realized_gain_loss: number;
+  };
+  side_income: {
+    entries: TaxSideIncomeEntry[];
+    total: number;
+  };
+  as_filed: {
+    federal: TaxAsFiledFederal | null;
+    state: TaxAsFiledState | null;
+    derived: TaxAsFiledDerived | null;
+  };
+  hourly: unknown | null;
+  dependents: unknown | null;
+  informational: { form_type: string; label: string | null; document_id: string }[];
+  documents: TaxDocRef[];
+}
+
 export type DocKind = "pdf" | "png" | "jpeg";
 
 export type DocStage = "ingested" | "classified" | "extracted" | "verified" | "error";

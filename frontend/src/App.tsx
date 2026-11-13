@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useCalculation } from "./hooks/useCalculation";
 import HousePurchaseSection from "./components/inputs/HousePurchase";
 import LoanTermsSection from "./components/inputs/LoanTerms";
@@ -59,7 +59,7 @@ function App() {
   // move-in-repair ledger can scope to this property.
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [page, setPageState] = useState<Page>(() => pageFromPath(window.location.pathname));
-  // Active tax year for the Tax Prep tab (defaults to 2025, the current corpus).
+  // Active tax year for the Tax Planning & Research tab (defaults to 2025, the current corpus).
   const [taxYear, setTaxYear] = useState(2025);
 
   // Navigate to a tab by pushing its URL, so the address bar reflects the tab
@@ -164,7 +164,7 @@ function App() {
     commitScenarios(next, active);
   };
 
-  // Manual "Refresh services" — runs the deploy health check on demand (relaunch
+  // Manual "Refresh services" â€” runs the deploy health check on demand (relaunch
   // the proxy / sibling app if down). Replaces the old every-5-min pop-up task.
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
@@ -173,7 +173,7 @@ function App() {
     setRefreshMsg(null);
     try {
       const res = await systemRefresh();
-      setRefreshMsg(res.ok ? "✔ services healthy" : "⚠ see details");
+      setRefreshMsg(res.ok ? "âœ” services healthy" : "âš  see details");
       // Surface the check's output in the console for the curious.
       console.info("service refresh:\n" + res.output.join("\n"));
     } catch {
@@ -233,7 +233,7 @@ function App() {
             className={page === "tax" ? "page-tab active" : "page-tab"}
             onClick={() => setPage("tax")}
           >
-            Tax Prep
+            Tax Planning & Research
           </button>
         </nav>
         <div className="header-actions">
@@ -244,12 +244,12 @@ function App() {
             disabled={refreshing}
             title="Re-check services and restart the proxy / other app if they're down"
           >
-            {refreshing ? "⟳ Refreshing…" : "⟳ Refresh services"}
+            {refreshing ? "âŸ³ Refreshingâ€¦" : "âŸ³ Refresh services"}
           </button>
           {refreshMsg && <span className="refresh-svc-msg">{refreshMsg}</span>}
           {page === "dashboard" && result && (
             <button type="button" className="print-btn" onClick={handlePrint}>
-              📄 Export PDF
+              ðŸ“„ Export PDF
             </button>
           )}
         </div>
@@ -305,7 +305,7 @@ function App() {
           <ExtraPrincipalSection data={state.extra_principal} onChange={setSection("extra_principal")} />
         </div>
         <div className="results-column">
-          {loading && <p className="loading">Calculating…</p>}
+          {loading && <p className="loading">Calculatingâ€¦</p>}
           {error && <p className="error">{error}</p>}
           {result && <ResultsPanel result={result} purchaseMode={state.house_purchase.purchase_mode} discretionary={state.discretionary} profileId={activeProfileId} />}
         </div>
