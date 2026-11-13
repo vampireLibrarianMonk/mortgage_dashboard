@@ -381,6 +381,11 @@ export interface TaxYearSummary {
   as_filed: {
     federal: TaxAsFiledFederal | null;
     states: TaxAsFiledState[];
+    combined: {
+      balance_due_total: number;
+      refund_total: number;
+      net_owed: number;
+    } | null;
     derived: TaxAsFiledDerived | null;
   };
   hourly: unknown | null;

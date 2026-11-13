@@ -204,6 +204,19 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
         )
         derived["withholding_shortfall"] = round(fed["total_tax"] - total_fed_wh, 2)
 
+    # Combined as-filed outcome across all filings (federal + states) — the
+    # figure the year chip shows. Owes add up; refunds net against them.
+    filings = ([as_filed_federal] if as_filed_federal else []) + as_filed_states
+    balance_total = round(sum((x.get("balance_due") or 0) for x in filings), 2)
+    refund_total = round(sum((x.get("refund") or 0) for x in filings), 2)
+    combined = None
+    if filings:
+        combined = {
+            "balance_due_total": balance_total,
+            "refund_total": refund_total,
+            "net_owed": round(balance_total - refund_total, 2),
+        }
+
     return {
         "year": year,
         "salary": {
@@ -224,6 +237,7 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
         "as_filed": {
             "federal": as_filed_federal or None,
             "states": as_filed_states,
+            "combined": combined,
             "derived": derived or None,
         },
         "hourly": None,  # lights up when a final-of-year paystub (with hours) is on file

@@ -112,13 +112,11 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
       <div className="tax-year-chips">
         {YEARS.map((y) => {
           const s = summaries.find((x) => x.year === y);
-          const filed = s?.as_filed.federal ?? null;
-          const line = filed
-            ? filed.balance_due != null
-              ? `Owe ${fmt(filed.balance_due)}`
-              : filed.refund != null
-                ? `Refund ${fmt(filed.refund)}`
-                : "Filed"
+          const combined = s?.as_filed.combined ?? null;
+          const line = combined && combined.net_owed != null
+            ? combined.net_owed >= 0
+              ? `Owe ${fmt(combined.net_owed)}`
+              : `Refund ${fmt(-combined.net_owed)}`
             : s && s.salary.total_wages > 0
               ? `Wages ${fmt(s.salary.total_wages)}`
               : "No documents";
