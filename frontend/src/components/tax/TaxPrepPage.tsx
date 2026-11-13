@@ -12,8 +12,13 @@ interface Props {
   onYearChange: (year: number) => void;
 }
 
-// A small, sensible range of recent tax years to pick from.
-const YEARS = [2026, 2025, 2024, 2023];
+// Years from 2023 through next year, newest first — the chip row scrolls
+// horizontally once the chips no longer fit.
+const CURRENT_YEAR = new Date().getFullYear();
+const YEARS = Array.from(
+  { length: Math.max(0, CURRENT_YEAR + 1 - 2023 + 1) },
+  (_, i) => CURRENT_YEAR + 1 - i,
+);
 
 const fmt = (n: number | null | undefined) =>
   n == null ? "—" : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -201,16 +206,16 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
             {summary.salary.people.map((p) => (
               <div className="tax-kv-row" key={p.document_id}>
                 <span className="tax-kv-person">{p.person ?? "—"} · {p.employer ?? "W-2"}</span>
-                <span>Wages {fmt(p.wages)}</span>
-                <span>Fed WH {fmt(p.fed_withholding)}</span>
-                <span>{p.state ?? "State"} WH {fmt(p.state_withholding)}</span>
+                <span className="tax-col"><span className="tax-col-label">Wages</span><span className="tax-col-value">{fmt(p.wages)}</span></span>
+                <span className="tax-col"><span className="tax-col-label">Fed WH</span><span className="tax-col-value">{fmt(p.fed_withholding)}</span></span>
+                <span className="tax-col"><span className="tax-col-label">{p.state ? `${p.state} WH` : "State WH"}</span><span className="tax-col-value">{fmt(p.state_withholding)}</span></span>
               </div>
             ))}
             <div className="tax-kv-row tax-total-row">
               <span className="tax-kv-person">Household total</span>
-              <span>Wages {fmt(summary.salary.total_wages)}</span>
-              <span>Fed WH {fmt(summary.salary.total_fed_withholding)}</span>
-              <span>State WH {fmt(summary.salary.total_state_withholding)}</span>
+              <span className="tax-col"><span className="tax-col-label">Wages</span><span className="tax-col-value">{fmt(summary.salary.total_wages)}</span></span>
+              <span className="tax-col"><span className="tax-col-label">Fed WH</span><span className="tax-col-value">{fmt(summary.salary.total_fed_withholding)}</span></span>
+              <span className="tax-col"><span className="tax-col-label">State WH</span><span className="tax-col-value">{fmt(summary.salary.total_state_withholding)}</span></span>
             </div>
             <p className="section-hint">
               $/hour combined and per person appears once a final-of-year paystub

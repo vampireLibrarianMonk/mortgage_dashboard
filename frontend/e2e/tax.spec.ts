@@ -100,7 +100,7 @@ test("tax prep 2025 renders the as-filed summary layout", async ({ page }) => {
     page.locator(".tax-total-row", { hasText: "Household total" }),
   ).toContainText("279,469.79");
 
-  // Year chips — four years, with the as-filed outcome on the 2025 chip.
-  await expect(page.locator(".tax-chip")).toHaveCount(4);
+  // Year chips — five years (2027..2023), with the as-filed outcome on 2025.
+  await expect(page.locator(".tax-chip")).toHaveCount(5);
   await expect(page.locator(".tax-chip", { hasText: "Owe 8,934.00" })).toBeVisible();
 });

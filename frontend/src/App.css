@@ -1635,3 +1635,29 @@ h4 {
 .tax-kv-person { font-weight: 600; }
 .tax-total-row { border-bottom: none; font-weight: 600; }
 .tax-kv-block { border-bottom: 1px dashed var(--border); padding: 0.4rem 0; display: flex; flex-direction: column; gap: 0.25rem; }
+
+/* Tax summary rows: aligned tabular columns (labels left, numbers right). */
+.tax-kv { display: grid; grid-template-columns: 1fr auto; align-items: baseline; }
+.tax-kv > span:last-child { font-variant-numeric: tabular-nums; text-align: right; }
+.tax-kv-row {
+  display: grid;
+  grid-template-columns: minmax(210px, 1.4fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr);
+  gap: 0.4rem 0.9rem;
+  align-items: end;
+}
+.tax-col { display: flex; flex-direction: column; align-items: flex-end; }
+.tax-col-label { font-size: 0.72rem; color: var(--muted); }
+.tax-col-value { font-variant-numeric: tabular-nums; text-align: right; }
+
+/* Year chips: horizontal scroll once the row no longer fits. */
+.tax-year-chips {
+  display: flex;
+  gap: 0.6rem;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  padding: 0 0 0.4rem;
+  scrollbar-width: thin;
+}
+.tax-year-chips::-webkit-scrollbar { height: 6px; }
+.tax-year-chips::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.tax-chip { flex: 0 0 auto; min-width: 132px; }
