@@ -109,6 +109,8 @@ def _doc_ref(doc: TaxDocument) -> dict:
         "stage": doc.stage.value,
         "taxpayer": doc.taxpayer,
     }
+
+
 def _deduction_entries(doc_id: str, fvals: dict[str, object]) -> list[dict]:
     """Deductions/adjustments the filed return shows, each with the jurisdiction
     it actually reduces. Only what the documents carry — an unclaimed deduction
@@ -167,9 +169,6 @@ def _il_529_entry(doc_id: str) -> dict:
         "document_id": doc_id,
         "note": "No 529/college-savings subtraction appears in the filed IL-1040 package.",
     }
-
-
-
 
 
 def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, list[TaxFact]]) -> dict:
