@@ -68,3 +68,39 @@ test("tax prep 2025 screenshot for the record", async ({ page }) => {
     fullPage: true,
   });
 });
+
+test("tax prep 2025 renders the as-filed summary layout", async ({ page }) => {
+  await page.goto("/tax");
+  await expect(page.locator(".tax-card-federal .tax-pic-label")).toHaveText(
+    "Federal — as filed",
+  );
+  await expect(
+    page
+      .locator(".tax-card-federal .tax-kv", { hasText: "Adjusted gross income" }),
+  ).toContainText("282,819.00");
+  await expect(page.locator(".tax-card-federal .tax-kv-due")).toContainText(
+    "8,934.00",
+  );
+  await expect(
+    page.locator(".tax-card-state", { hasText: "Illinois" }).locator(".tax-pic-label"),
+  ).toHaveText("Illinois — as filed");
+
+  // VA withholding was paid but no VA return is on file -> surfaced honestly.
+  await expect(
+    page.locator(".tax-card-state", { hasText: "Virginia" }).locator(".tax-pic-label"),
+  ).toHaveText("Virginia — withholding paid, return not on file");
+  await expect(page.locator(".tax-card-state", { hasText: "Virginia" })).toContainText(
+    "14,471.57",
+  );
+
+  // Salary rows per person + household strip.
+  await expect(page.locator(".tax-kv-person", { hasText: "Patrick" })).toBeVisible();
+  await expect(page.locator(".tax-kv-person", { hasText: "Sara" })).toBeVisible();
+  await expect(
+    page.locator(".tax-total-row", { hasText: "Household total" }),
+  ).toContainText("279,469.79");
+
+  // Year chips — four years, with the as-filed outcome on the 2025 chip.
+  await expect(page.locator(".tax-chip")).toHaveCount(4);
+  await expect(page.locator(".tax-chip", { hasText: "Owe 8,934.00" })).toBeVisible();
+});

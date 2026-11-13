@@ -55,6 +55,26 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
 
   const summary = summaries.find((s) => s.year === year);
 
+  // States whose W-2 withholding we paid — used to surface states with no
+  // as-filed return on file (e.g. VA withholding in a year whose only filed
+  // state return was Illinois).
+  const filedStateName = summary?.as_filed.state?.name ?? null;
+  const withheldByState: { state: string; total: number }[] = [];
+  if (summary) {
+    const by = new Map<string, number>();
+    for (const p of summary.salary.people) {
+      if (p.state && p.state_withholding != null) {
+        by.set(p.state, (by.get(p.state) ?? 0) + p.state_withholding);
+      }
+    }
+    for (const [state, total] of by) withheldByState.push({ state, total });
+  }
+  const stateName = (code: string | null) =>
+    code === "VA" ? "Virginia" : code === "IL" ? "Illinois" : (code ?? "");
+  const unfiledStates = withheldByState.filter(
+    (s) => !filedStateName || !filedStateName.includes(stateName(s.state)),
+  );
+
   const handleDelete = async (doc: TaxDocument) => {
     await taxDeleteDocument(year, doc.id);
     if (selected?.id === doc.id) setSelected(null);
@@ -159,6 +179,20 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
           </div>
         </section>
       )}
+
+      {unfiledStates.map((s) => (
+        <section className="tax-summary-cards" key={s.state}>
+          <div className="tax-card tax-card-state">
+            <span className="tax-pic-label">
+              {stateName(s.state)} — withholding paid, return not on file
+            </span>
+            <div className="tax-kv">
+              <span>State withholding paid (per W-2)</span>
+              <span>{fmt(s.total)}</span>
+            </div>
+          </div>
+        </section>
+      ))}
 
       <section className="tax-section">
         <h3>Salary</h3>
