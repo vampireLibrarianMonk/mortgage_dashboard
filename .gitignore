@@ -75,3 +75,4 @@ backend/mailbox/_samples/
 # Processed order documents (renamed + raw invoice PDFs, real financial data).
 # Never commit; kept locally for provenance and the split pipeline.
 processed_document/
+frontend/test-results/
