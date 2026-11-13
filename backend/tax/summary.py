@@ -109,6 +109,67 @@ def _doc_ref(doc: TaxDocument) -> dict:
         "stage": doc.stage.value,
         "taxpayer": doc.taxpayer,
     }
+def _deduction_entries(doc_id: str, fvals: dict[str, object]) -> list[dict]:
+    """Deductions/adjustments the filed return shows, each with the jurisdiction
+    it actually reduces. Only what the documents carry — an unclaimed deduction
+    is shown as 0 with the reason the return itself gives (via Form 8889)."""
+    entries: list[dict] = []
+
+    if fvals.get("ret_fed_hsa_deduction") is not None:
+        bits: list[str] = []
+        employer = [
+            (who, _num(fvals.get(f"ret_fed_hsa_employer_contrib_{who}")))
+            for who in ("you", "spouse")
+        ]
+        if any(v is not None for _, v in employer):
+            parts = ", ".join(f"{w} ${v:,.0f}" for w, v in employer if v is not None)
+            bits.append(f"contributions ran through payroll — employer {parts} (Form 8889)")
+        limit = _num(fvals.get("ret_fed_hsa_deduction_limit"))
+        if limit:
+            bits.append(f"${limit:,.0f} allowable but unclaimed (Form 8889 line 12)")
+        dist = _num(fvals.get("ret_fed_hsa_taxable_distribution"))
+        if dist:
+            bits.append(f"${dist:,.0f} of distributions was taxable (Schedule 1 line 8f)")
+        entries.append({
+            "label": "Health savings account deduction",
+            "source": "Schedule 1 (1040) line 13 · Form 8889 line 13",
+            "jurisdiction": "Federal",
+            "amount": _num(fvals.get("ret_fed_hsa_deduction")),
+            "document_id": doc_id,
+            "note": "; ".join(bits) or None,
+        })
+
+    va_529 = _num(fvals.get("ret_st_va_529_deduction"))
+    if va_529 is not None:
+        va_bits = [
+            "reduces Virginia taxable income only — 529 contributions are not deductible on the federal return",
+        ]
+        if va_529 >= 3999.995:
+            va_bits.append("$4,000 is the per-account Virginia529 annual maximum")
+        entries.append({
+            "label": "Virginia529 college savings deduction",
+            "source": "VA 760 line 13 (Deductions)",
+            "jurisdiction": "Virginia",
+            "amount": va_529,
+            "document_id": doc_id,
+            "note": "; ".join(va_bits),
+        })
+
+    return entries
+
+
+def _il_529_entry(doc_id: str) -> dict:
+    return {
+        "label": "Illinois 529 (Bright Start / Bright Directions) subtraction",
+        "source": "IL-1040 Schedule M",
+        "jurisdiction": "Illinois",
+        "amount": None,
+        "document_id": doc_id,
+        "note": "No 529/college-savings subtraction appears in the filed IL-1040 package.",
+    }
+
+
+
 
 
 def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, list[TaxFact]]) -> dict:
@@ -120,6 +181,8 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
     as_filed_federal: dict = {}
     as_filed_states: list[dict] = []
     doc_refs: list[dict] = []
+    deductions: list[dict] = []
+    il_doc_id: str | None = None
 
     for doc in sorted(docs, key=lambda d: d.original_filename):
         fvals = _facts_map(facts_by_doc.get(doc.id, []))
@@ -163,7 +226,11 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
                     "balance_due": _num(kv.get("balance_due")),
                     "document_id": doc.id,
                 })
+            # Deductions & adjustments the filed package shows, with the
+            # jurisdiction each one actually reduces.
+            deductions.extend(_deduction_entries(doc.id, fvals))
         elif ft is FormType.f1040_il:
+            il_doc_id = doc.id
             as_filed_states.append({
                 "name": _STATE_NAMES.get(doc.form_type.value, doc.form_type.value),
                 "taxable_income": _num(fvals.get("il_taxable_income")),
@@ -181,6 +248,10 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
             })
 
     # Totals over what the facts actually carry (None is treated as absent).
+    if il_doc_id is not None and not any(
+        d["jurisdiction"] == "Illinois" for d in deductions
+    ):
+        deductions.append(_il_529_entry(il_doc_id))
     total_wages = round(sum(p["wages"] or 0 for p in salary_people), 2)
     total_fed_wh = round(sum(p["fed_withholding"] or 0 for p in salary_people), 2)
     total_state_wh = round(sum(p["state_withholding"] or 0 for p in salary_people), 2)
@@ -240,6 +311,7 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
             "combined": combined,
             "derived": derived or None,
         },
+        "deductions": deductions,
         "hourly": None,  # lights up when a final-of-year paystub (with hours) is on file
         "dependents": None,  # needs a column-aware parse of the 1040 dependents table
         "informational": informational,

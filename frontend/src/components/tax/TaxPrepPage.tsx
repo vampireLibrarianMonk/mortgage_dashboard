@@ -202,6 +202,36 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
         </section>
       ))}
 
+      {summary && summary.deductions.length > 0 && (
+        <section className="tax-section">
+          <h3>Deductions & adjustments — where they applied</h3>
+          {summary.deductions.map((d) => (
+            <div className="tax-kv-block" key={`${d.jurisdiction}-${d.label}`}>
+              <div className="tax-kv">
+                <span>
+                  <span
+                    className={
+                      d.jurisdiction === "Federal"
+                        ? "tax-ded-badge tax-ded-badge-federal"
+                        : "tax-ded-badge tax-ded-badge-state"
+                    }
+                  >
+                    {d.jurisdiction}
+                  </span>{" "}
+                  {d.label}
+                </span>
+                <span>{d.amount == null ? "none on file" : fmt(d.amount)}</span>
+              </div>
+              <div className="tax-ded-meta">
+                <span className="tax-ded-source">{d.source}</span>
+                {d.note && <span className="tax-ded-note">{d.note}</span>}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+
       <section className="tax-section">
         <h3>Salary</h3>
         {summary && summary.salary.people.length > 0 ? (

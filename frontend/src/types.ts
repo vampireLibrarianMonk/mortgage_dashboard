@@ -352,6 +352,15 @@ export interface TaxAsFiledDerived {
   withholding_shortfall: number | null;
 }
 
+export interface TaxDeduction {
+  label: string;
+  source: string;
+  jurisdiction: string;
+  amount: number | null;
+  document_id: string;
+  note: string | null;
+}
+
 export interface TaxDocRef {
   id: string;
   filename: string;
@@ -388,6 +397,7 @@ export interface TaxYearSummary {
     } | null;
     derived: TaxAsFiledDerived | null;
   };
+  deductions: TaxDeduction[];
   hourly: unknown | null;
   dependents: unknown | null;
   informational: { form_type: string; label: string | null; document_id: string }[];

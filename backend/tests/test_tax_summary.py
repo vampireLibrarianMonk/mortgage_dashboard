@@ -66,11 +66,17 @@ def test_summary_salary_investments_and_as_filed():
             ("ret_agi", "282819.00"), ("ret_total_tax", "44076.00"),
             ("ret_amount_owed", "8934.00"),
             ("ret_filing_status", "Married filing jointly"),
+            ("ret_fed_hsa_deduction", "0.00"),
+            ("ret_fed_hsa_deduction_limit", "8110.00"),
+            ("ret_fed_hsa_employer_contrib_you", "4495.00"),
+            ("ret_fed_hsa_employer_contrib_spouse", "4495.00"),
+            ("ret_fed_hsa_taxable_distribution", "240.00"),
             ("ret_st_va_state_name", "Virginia"),
             ("ret_st_va_taxable_income", "258529.00"),
             ("ret_st_va_total_tax", "14349.00"),
             ("ret_st_va_total_payments", "14495.00"),
             ("ret_st_va_refund", "146.00"),
+            ("ret_st_va_529_deduction", "4000.00"),
         ], FormType.f1040),
         il.id: facts_for(il, [
             ("il_taxable_income", "463.00"), ("il_tax", "23.00"),
@@ -101,6 +107,22 @@ def test_summary_salary_investments_and_as_filed():
     assert va["total_tax"] == 14349.00
     assert va["refund"] == 146.00
 
+    # Deductions & adjustments, each tagged with the jurisdiction it reduces:
+    # the HSA deduction was claimed at 0 (payroll-funded contributions), the
+    # 529 deduction is Virginia-only, and the IL return carries no 529
+    # subtraction in its filed package.
+    ded = s["deductions"]
+    assert [(d["jurisdiction"], d["amount"]) for d in ded] == [
+        ("Federal", 0.0), ("Virginia", 4000.0), ("Illinois", None),
+    ]
+    assert ded[0]["label"] == "Health savings account deduction"
+    assert "payroll" in ded[0]["note"]
+    assert "8,110" in ded[0]["note"]
+    assert ded[1]["label"] == "Virginia529 college savings deduction"
+    assert "not deductible on the federal return" in ded[1]["note"]
+    assert ded[2]["label"].startswith("Illinois 529")
+    assert ded[2]["amount"] is None
+
     derived = s["as_filed"]["derived"]
     assert derived["effective_rate"] == round(44076.00 / 282819.00, 4)
     assert derived["withholding_coverage"] == round(35286.56 / 44076.00, 4)
@@ -114,6 +136,7 @@ def test_summary_empty_year_is_an_honest_skeleton():
     assert s["as_filed"]["federal"] is None
     assert s["as_filed"]["states"] == []
     assert s["as_filed"]["derived"] is None
+    assert s["deductions"] == []
     assert s["documents"] == []
 
 

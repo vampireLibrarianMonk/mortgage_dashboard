@@ -157,11 +157,38 @@ FEDERAL_SAMPLE = (
     "Return | Total Payments/Credits                  $     35,287.00\n"
     "Refund | Amount of line 34 you want refunded to you $ 12,345.00\n"
     "Married filing jointly\n"
+    # Schedule 1 (Part I) footer + its value cluster: line 8f then line 10,
+    # both 240.00 (a taxable HSA distribution is the only additional income).
+    "For Paperwork Reduction Act Notice. Schedule 1 (Form 1040) 2025 Created 7/25/25\n"
+    "Patrick & Sara C Flanigan 574-06-7812\n"
+    "240.\n"
+    "240.\n"
+    "BAA REV 03/25/26 TTO\n"
+    # Form 8889 per spouse: the e-file print's value cluster — lines 3/5/6/8
+    # (8,550 family limit), 9/11 employer contributions 4,495, line 12 limit
+    # 4,055, line 13 HSA deduction 0.
+    "For Paperwork Reduction Act Notice. Form 8889 (2025) Created 3/28/25\n"
+    "Patrick Flanigan 574-06-7812\n"
+    "8,550.\n4,495.\n4,495.\n0.\n0.\n8,550.\n8,550.\n8,550.\n4,055.\n0.\n"
+    "BAA REV 03/25/26 TTO\n"
+    "For Paperwork Reduction Act Notice. Form 8889 (2025) Created 3/28/25\n"
+    "Sara C Flanigan 227-63-9665\n"
+    "8,550.\n4,495.\n4,495.\n0.\n0.\n8,550.\n8,550.\n8,550.\n4,055.\n0.\n"
+    "BAA REV 03/25/26 TTO\n"
     "Electronic Filing Instructions for your 2025 Virginia Tax Return\n"
     "2025 | Taxable Income                          $    258,529.00\n"
     "Virginia | Total Tax                               $     14,349.00\n"
     "Tax | Total Payments/Credits                  $     14,495.00\n"
     "Return | Amount to be Refunded                   $        146.00\n"
+    # The 760CG worksheet page: header, then the value cluster — FAGI/VAGI
+    # 282,819, standard deduction 17,500, exemptions 2,790, line-13 deductions
+    # 4,000 (the Virginia529 deduction), subtotal 24,290, taxable 258,529,
+    # tax 14,608, STA 259, VAGI-spouse 87,556, net tax 14,349, payments 14,495.
+    "2025 VA760CG\n"
+    "Page 1 of 2\n"
+    "10239.\n4233.\n282819.\n282819.\n282819.\n17500.\n2790.\n4000.\n24290.\n"
+    "258529.\n14608.\n259.\n87556.\n14349.\n23.\n14495.\n146.\n146.\n"
+    "REV 03/16/26 TTO\n"
 )
 
 
@@ -185,6 +212,29 @@ def test_f1040_embedded_virginia_block():
     assert by["ret_st_va_total_tax"].value == "14349.00"
     assert by["ret_st_va_total_payments"].value == "14495.00"
     assert by["ret_st_va_refund"].value == "146.00"
+
+
+def test_f1040_hsa_8889_details():
+    facts = extract_f1040_facts("doc4", 2025, native(FEDERAL_SAMPLE))
+    by = {f.field_code: f for f in facts}
+    # Both spouses' Form 8889s show the deduction claimed at zero — the HSA
+    # was funded through payroll (employer contributions), not out of pocket.
+    assert by["ret_fed_hsa_deduction"].value == "0.00"
+    assert by["ret_fed_hsa_deduction_limit"].value == "8110.00"
+    assert by["ret_fed_hsa_employer_contrib_you"].value == "4495.00"
+    assert by["ret_fed_hsa_employer_contrib_spouse"].value == "4495.00"
+    assert by["ret_fed_hsa_taxable_distribution"].value == "240.00"
+
+
+def test_f1040_va529_deduction_from_760cg():
+    facts = extract_f1040_facts("doc4", 2025, native(FEDERAL_SAMPLE))
+    by = {f.field_code: f for f in facts}
+    # VA 760CG line 13 'Deductions' 4,000 = the Virginia529 deduction; the
+    # state deduction detail (FAGI, standard deduction, exemptions) rides along.
+    assert by["ret_st_va_529_deduction"].value == "4000.00"
+    assert by["ret_st_va_standard_deduction"].value == "17500.00"
+    assert by["ret_st_va_exemptions"].value == "2790.00"
+    assert by["ret_st_va_fagi"].value == "282819.00"
 
 
 # --- as-filed Illinois return (native text) -----------------------------------

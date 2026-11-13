@@ -108,3 +108,35 @@ test("tax prep 2025 renders the as-filed summary layout", async ({ page }) => {
   await expect(page.locator(".tax-chip")).toHaveCount(5);
   await expect(page.locator(".tax-chip", { hasText: "Owe 8,811.00" })).toBeVisible();
 });
+
+test("tax prep 2025 shows the HSA and 529 deductions with their jurisdictions", async ({
+  page,
+}) => {
+  await page.goto("/tax");
+  const section = page.locator(".tax-section", {
+    hasText: "Deductions & adjustments",
+  });
+  await expect(section).toBeVisible();
+
+  // HSA: claimed at zero on the federal return — contributions ran through
+  // payroll (employer $4,495 each per Form 8889), $8,110 allowable unclaimed,
+  // $240 of distributions taxable.
+  const federal = section.locator(".tax-kv-block", {
+    hasText: "Health savings account",
+  });
+  await expect(federal.locator(".tax-ded-badge")).toHaveText("Federal");
+  await expect(federal).toContainText("0.00");
+  await expect(federal).toContainText("$4,495");
+  await expect(federal).toContainText("$8,110");
+
+  // Virginia529: $4,000 off Virginia taxable income only — no federal benefit.
+  const va = section.locator(".tax-kv-block", { hasText: "Virginia529" });
+  await expect(va.locator(".tax-ded-badge")).toHaveText("Virginia");
+  await expect(va).toContainText("4,000.00");
+  await expect(va).toContainText("not deductible on the federal return");
+
+  // Illinois: no 529 subtraction in the filed IL-1040 package.
+  const il = section.locator(".tax-kv-block", { hasText: "Illinois 529" });
+  await expect(il.locator(".tax-ded-badge")).toHaveText("Illinois");
+  await expect(il).toContainText("none on file");
+});
