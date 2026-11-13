@@ -76,3 +76,6 @@ backend/mailbox/_samples/
 # Never commit; kept locally for provenance and the split pipeline.
 processed_document/
 frontend/test-results/
+
+# personal backlog (kept local)
+backlog.txt
