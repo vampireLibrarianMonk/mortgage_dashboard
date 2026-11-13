@@ -129,9 +129,6 @@ def _deduction_entries(doc_id: str, fvals: dict[str, object]) -> list[dict]:
         limit = _num(fvals.get("ret_fed_hsa_deduction_limit"))
         if limit:
             bits.append(f"${limit:,.0f} allowable but unclaimed (Form 8889 line 12)")
-        dist = _num(fvals.get("ret_fed_hsa_taxable_distribution"))
-        if dist:
-            bits.append(f"${dist:,.0f} of distributions was taxable (Schedule 1 line 8f)")
         entries.append({
             "label": "Health savings account deduction",
             "source": "Schedule 1 (1040) line 13 · Form 8889 line 13",

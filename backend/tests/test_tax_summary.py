@@ -70,7 +70,6 @@ def test_summary_salary_investments_and_as_filed():
             ("ret_fed_hsa_deduction_limit", "8110.00"),
             ("ret_fed_hsa_employer_contrib_you", "4495.00"),
             ("ret_fed_hsa_employer_contrib_spouse", "4495.00"),
-            ("ret_fed_hsa_taxable_distribution", "240.00"),
             ("ret_st_va_state_name", "Virginia"),
             ("ret_st_va_taxable_income", "258529.00"),
             ("ret_st_va_total_tax", "14349.00"),

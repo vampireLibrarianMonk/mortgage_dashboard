@@ -25,7 +25,6 @@ _FIELD_LABELS = {
     "ret_fed_hsa_deduction_limit": "As-filed HSA allowable limit (Form 8889 line 12)",
     "ret_fed_hsa_employer_contrib_you": "As-filed HSA employer contributions — taxpayer (Form 8889 line 9)",
     "ret_fed_hsa_employer_contrib_spouse": "As-filed HSA employer contributions — spouse (Form 8889 line 9)",
-    "ret_fed_hsa_taxable_distribution": "As-filed taxable HSA distribution (Schedule 1 line 8f)",
     "ret_st_va_fagi": "As-filed Virginia FAGI (VA 760 line 1)",
     "ret_st_va_standard_deduction": "As-filed Virginia standard deduction (VA 760 line 11)",
     "ret_st_va_exemptions": "As-filed Virginia exemptions (VA 760 line 12)",
@@ -69,7 +68,6 @@ _SLUG_ABBR = {"virginia": "va", "illinois": "il"}
 _MONEY_TOKEN = re.compile(r"\b\d[\d,]*\.\d{0,2}")
 _F8889_FOOTER = re.compile(r"Form 8889 \(2025\) Created", re.I)
 _BAA_STAMP = re.compile(r"BAA REV")
-_SCH1_FOOTER = re.compile(r"Schedule 1 \(Form 1040\) 2025 Created", re.I)
 _VA760CG_HEADER = re.compile(r"VA760CG")
 _VA_STAMP = re.compile(r"REV \d{2}/\d{2}/\d{2}")
 
@@ -261,23 +259,14 @@ def extract_f1040_facts(
     # 'Federal' block, and the e-file print's duplicate taxpayer copy can sit
     # after a state's instructions block).
 
-    # Schedule 1 Part I's value cluster: line 8f (taxable HSA distributions)
-    # then line 10 (total additional income) — lifted only when they are the
-    # cluster's only two values and agree, i.e. no other additional-income
-    # line was filled.
+    # Form 8889 copies: line 13 is the HSA deduction as filed (the
+    # Schedule 1 line-13 amount), line 12 the allowable limit, lines 9/11
+    # the employer contributions. Copies are per spouse. Deliberately NOT
+    # inferred here: Schedule 1 Part I's footer cluster (two agreeing tokens)
+    # cannot distinguish line 8f (taxable HSA distributions) from line 3
+    # (business income) — the 2025 return proved that ambiguity real, so no
+    # 8f fact is lifted from it.
     if federal_seen:
-        for i, ln in enumerate(lines):
-            if _SCH1_FOOTER.search(ln):
-                tokens = _money_cluster(lines, i, _BAA_STAMP, max_lines=8)
-                if len(tokens) == 2 and abs(tokens[0] - tokens[1]) <= 0.005:
-                    add("ret_fed_hsa_taxable_distribution",
-                        _FIELD_LABELS["ret_fed_hsa_taxable_distribution"],
-                        f"{tokens[0]:.2f}", conf=0.9)
-                break
-
-        # Form 8889 copies: line 13 is the HSA deduction as filed (the
-        # Schedule 1 line-13 amount), line 12 the allowable limit, lines 9/11
-        # the employer contributions. Copies are per spouse.
         copies = _f8889_copies(lines)
         if copies:
             ded = sum(c[-1] for c in copies)

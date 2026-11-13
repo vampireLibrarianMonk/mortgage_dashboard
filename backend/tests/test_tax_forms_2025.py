@@ -157,16 +157,11 @@ FEDERAL_SAMPLE = (
     "Return | Total Payments/Credits                  $     35,287.00\n"
     "Refund | Amount of line 34 you want refunded to you $ 12,345.00\n"
     "Married filing jointly\n"
-    # Schedule 1 (Part I) footer + its value cluster: line 8f then line 10,
-    # both 240.00 (a taxable HSA distribution is the only additional income).
-    "For Paperwork Reduction Act Notice. Schedule 1 (Form 1040) 2025 Created 7/25/25\n"
-    "Patrick & Sara C Flanigan 574-06-7812\n"
-    "240.\n"
-    "240.\n"
-    "BAA REV 03/25/26 TTO\n"
     # Form 8889 per spouse: the e-file print's value cluster — lines 3/5/6/8
     # (8,550 family limit), 9/11 employer contributions 4,495, line 12 limit
-    # 4,055, line 13 HSA deduction 0.
+    # 4,055, line 13 HSA deduction 0. Note: Schedule 1's own footer cluster is
+    # NOT parsed — two agreeing tokens there cannot be attributed to a
+    # specific line (line 3 vs 8f), so no 8f fact is lifted.
     "For Paperwork Reduction Act Notice. Form 8889 (2025) Created 3/28/25\n"
     "Patrick Flanigan 574-06-7812\n"
     "8,550.\n4,495.\n4,495.\n0.\n0.\n8,550.\n8,550.\n8,550.\n4,055.\n0.\n"
@@ -223,7 +218,9 @@ def test_f1040_hsa_8889_details():
     assert by["ret_fed_hsa_deduction_limit"].value == "8110.00"
     assert by["ret_fed_hsa_employer_contrib_you"].value == "4495.00"
     assert by["ret_fed_hsa_employer_contrib_spouse"].value == "4495.00"
-    assert by["ret_fed_hsa_taxable_distribution"].value == "240.00"
+    # No 8f (taxable HSA distribution) fact: Schedule 1's footer cluster is
+    # ambiguous between line 3 and line 8f, so it is deliberately not lifted.
+    assert "ret_fed_hsa_taxable_distribution" not in by
 
 
 def test_f1040_va529_deduction_from_760cg():
