@@ -53,10 +53,16 @@ def classify_form(kvs: list[ExtractedKV]) -> FormType:
     # sub-forms, so the strongest document-level markers are matched first.
     if "1095-c" in text:
         return FormType.f1095_c
-    if "3922" in text:
-        return FormType.f3922
     if "illinois" in text and "income tax" in text:
         return FormType.f1040_il
+    # A genuine Form 1040 page prints its own OMB number (1545-0074) — on
+    # every 1040 page and on no other form. E-file packages embed the 1099s
+    # and 3922s they report (so the corpus may mention "3922" or
+    # "consolidated"), and this marker outranks all of them.
+    if "1545-0074" in text:
+        return FormType.f1040
+    if "3922" in text:
+        return FormType.f3922
     if "u.s. individual income tax return" in text or (
         "1040" in text and "department of the treasury" in text
     ):

@@ -68,7 +68,7 @@ _SLUG_ABBR = {"virginia": "va", "illinois": "il"}
 # run: the page prints its labels first, then a footer line, then the values as
 # bare number tokens ending in a period, then a 'BAA REV' (federal) or
 # 'REV mm/dd/yy' (Virginia) stamp. Two placements matter here:
-#   • each Form 8889 copy: values sit between the 'Form 8889 (2025) Created'
+#   • each Form 8889 copy: values sit between the 'Form 8889 (<year>) Created'
 #     footer and the 'BAA REV' stamp — the last token is line 13 (the HSA
 #     deduction), the one before it is line 12 (the allowable limit), and the
 #     repeated early pair is lines 9/11 (employer contributions);
@@ -77,19 +77,37 @@ _SLUG_ABBR = {"virginia": "va", "illinois": "il"}
 #     rows two back and three/four back are the line-13 deductions and the
 #     exemptions/standard deduction, validated arithmetically below.
 _MONEY_TOKEN = re.compile(r"\b\d[\d,]*\.\d{0,2}")
-_F8889_FOOTER = re.compile(r"Form 8889 \(2025\) Created", re.I)
 _BAA_STAMP = re.compile(r"BAA REV")
 _VA760CG_HEADER = re.compile(r"VA760CG")
 _VA_STAMP = re.compile(r"REV \d{2}/\d{2}/\d{2}")
 
+# Footer regexes are year-parametrized: the e-file print stamps each form
+# footer with its tax year ("Form 8889 (2025) Created"), so older years'
+# packages carry their own year. Each factory derives the pattern from the
+# tax_year argument instead of a hardcoded 2025.
+def _f8889_footer_pat(tax_year: int) -> re.Pattern[str]:
+    return re.compile(rf"Form 8889 \({tax_year}\) Created", re.I)
+
+
+def _f1040_p1_footer_pat(tax_year: int) -> re.Pattern[str]:
+    return re.compile(rf"Form 1040 \({tax_year}\) Created", re.I)
+
+
+def _sch1_p1_footer_pat(tax_year: int) -> re.Pattern[str]:
+    return re.compile(rf"Schedule 1 \(Form 1040\) {tax_year} Created", re.I)
+
+
+def _sched_d_p2_footer_pat(tax_year: int) -> re.Pattern[str]:
+    return re.compile(rf"^Schedule D \(Form 1040\) {tax_year}$")
+
+
+def _ctc_footer_pat(tax_year: int) -> re.Pattern[str]:
+    return re.compile(rf"Schedule 8812 \(Form 1040\) {tax_year} Created", re.I)
+
 # Signed value runs (the 1040 page-1 income run carries negative losses as
 # '-3,000.', Schedule D's as '(4,658.)' style).
 _SIGNED_MONEY = re.compile(r"-?\(?\d[\d,]*\.\d{0,2}\)?")
-_F1040_P1_FOOTER = re.compile(r"Form 1040 \(2025\) Created", re.I)
-_SCH1_P1_FOOTER = re.compile(r"Schedule 1 \(Form 1040\) 2025 Created", re.I)
-_SCHED_D_P2_FOOTER = re.compile(r"^Schedule D \(Form 1040\) 2025$")
 _CTC_MULTIPLIER = re.compile(r"Multiply line 4 by \$([\d,]+)")
-_CTC_FOOTER = re.compile(r"Schedule 8812 \(Form 1040\) 2025 Created", re.I)
 
 
 def _signed_value(token: str) -> float:
@@ -129,11 +147,12 @@ def _money_cluster(
     return tokens
 
 
-def _f8889_copies(lines: list[str]) -> list[list[float]]:
+def _f8889_copies(lines: list[str], tax_year: int) -> list[list[float]]:
     """The value cluster of each Form 8889 copy in the package."""
+    footer = _f8889_footer_pat(tax_year)
     clusters: list[list[float]] = []
     for i, ln in enumerate(lines):
-        if _F8889_FOOTER.search(ln):
+        if footer.search(ln):
             tokens = _money_cluster(lines, i, _BAA_STAMP, max_lines=15)
             if tokens:
                 clusters.append(tokens)
@@ -218,6 +237,12 @@ def extract_f1040_facts(
     block embedded in the same e-file package (e.g. Virginia Form 760)."""
     text = native_text(kvs)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    # Year-derived footer patterns (the e-file print stamps its tax year).
+    f1040_p1_footer = _f1040_p1_footer_pat(tax_year)
+    sch1_p1_footer = _sch1_p1_footer_pat(tax_year)
+    sched_d_p2_footer = _sched_d_p2_footer_pat(tax_year)
+    ctc_footer = _ctc_footer_pat(tax_year)
 
     facts = []
     seen: set[str] = set()
@@ -307,7 +332,7 @@ def extract_f1040_facts(
     # (business income) — the 2025 return proved that ambiguity real, so no
     # 8f fact is lifted from it.
     if federal_seen:
-        copies = _f8889_copies(lines)
+        copies = _f8889_copies(lines, tax_year)
         if copies:
             ded = sum(c[-1] for c in copies)
             add("ret_fed_hsa_deduction", _FIELD_LABELS["ret_fed_hsa_deduction"],
@@ -329,7 +354,7 @@ def extract_f1040_facts(
         # fact is lifted from it (the 2025 return proved that ambiguity real).
         sch1_total: float | None = None
         for i, ln in enumerate(lines):
-            if _SCH1_P1_FOOTER.search(ln):
+            if sch1_p1_footer.search(ln):
                 run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=8)
                 if run:
                     sch1_total = run[-1]
@@ -349,7 +374,7 @@ def extract_f1040_facts(
             None,
         )
         for i, ln in enumerate(lines):
-            if not _F1040_P1_FOOTER.search(ln):
+            if not f1040_p1_footer.search(ln):
                 continue
             run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=16)
             if len(run) == 10:
@@ -381,7 +406,7 @@ def extract_f1040_facts(
         # line 21 loss limit]. The applied 1040 line-7a loss is the statutory
         # limit; anything beyond it carries forward — derived in the summary.
         for i, ln in enumerate(lines):
-            if not _SCHED_D_P2_FOOTER.search(ln):
+            if not sched_d_p2_footer.search(ln):
                 continue
             run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=8)
             if len(run) == 2 and run[0] < 0 and run[1] > 0 and abs(run[0]) >= run[1]:
@@ -403,7 +428,7 @@ def extract_f1040_facts(
                 break
         if multiplier and multiplier > 0:
             for i, ln in enumerate(lines):
-                if not _CTC_FOOTER.search(ln):
+                if not ctc_footer.search(ln):
                     continue
                 run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=20)
                 pair = next(

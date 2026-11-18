@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { taxDeleteDocument, taxGetSummary, taxListDocuments } from "../../api";
 import type { TaxDocument, TaxYearSummary } from "../../types";
 import ExtractedFacts from "./ExtractedFacts";
@@ -12,13 +12,16 @@ interface Props {
   onYearChange: (year: number) => void;
 }
 
-// Years from 2023 through next year, newest first — the chip row scrolls
-// horizontally once the chips no longer fit.
+// The summary API covers 2004 through next year; the chip row shows every
+// year that has documents PLUS the recent window (2023..next year, so empty
+// recent years stay visible). Newest first — the row scrolls horizontally
+// once the chips no longer fit.
 const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from(
-  { length: Math.max(0, CURRENT_YEAR + 1 - 2023 + 1) },
+const SUMMARY_YEARS = Array.from(
+  { length: Math.max(0, CURRENT_YEAR + 1 - 2004 + 1) },
   (_, i) => CURRENT_YEAR + 1 - i,
 );
+const RECENT_YEARS = SUMMARY_YEARS.filter((y) => y >= 2023);
 
 const fmt = (n: number | null | undefined) =>
   n == null ? "—" : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -40,7 +43,7 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
 
   const refresh = useCallback(() => {
     setLoading(true);
-    Promise.all([taxGetSummary(YEARS), taxListDocuments(year)])
+    Promise.all([taxGetSummary(SUMMARY_YEARS), taxListDocuments(year)])
       .then(([sums, list]) => {
         setSummaries(sums);
         setDocs(list);
@@ -59,6 +62,14 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
   }, [refresh]);
 
   const summary = summaries.find((s) => s.year === year);
+
+  // Chip list: years with documents plus the recent window, newest first.
+  const chipYears = useMemo(() => {
+    const withDocs = summaries
+      .filter((s) => s.has_documents)
+      .map((s) => s.year);
+    return [...new Set([...withDocs, ...RECENT_YEARS])].sort((a, b) => b - a);
+  }, [summaries]);
 
   // States whose W-2 withholding we paid — used to surface states with no
   // as-filed return on file (e.g. VA withholding in a year whose only filed
@@ -94,7 +105,7 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
           <label className="tax-year-pick">
             Tax year
             <select value={year} onChange={(e) => onYearChange(Number(e.target.value))}>
-              {YEARS.map((y) => (
+              {chipYears.map((y) => (
                 <option key={y} value={y}>
                   {y}
                 </option>
@@ -110,7 +121,7 @@ export default function TaxPrepPage({ year, onYearChange }: Props) {
       </div>
 
       <div className="tax-year-chips">
-        {YEARS.map((y) => {
+        {chipYears.map((y) => {
           const s = summaries.find((x) => x.year === y);
           const combined = s?.as_filed.combined ?? null;
           const line = combined && combined.net_owed != null
