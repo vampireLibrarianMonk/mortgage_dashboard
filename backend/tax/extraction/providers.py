@@ -64,6 +64,14 @@ class LocalDigitalProvider(ExtractionProvider):
         except Exception:
             return []
 
+        # Owner-password-only PDFs (TaxAct / bank statement exports) open with
+        # an empty user password; try it before giving up on a locked document.
+        if getattr(reader, "is_encrypted", False):
+            try:
+                reader.decrypt("")
+            except Exception:
+                pass  # stay quiet; the empty text signals "escalate to AWS"
+
         out: list[ExtractedKV] = []
 
         # 1. AcroForm fields (exact values when a PDF is a real fillable form).
