@@ -30,6 +30,7 @@ if str(BACKEND) not in sys.path:
 
 from tax import storage  # noqa: E402
 from tax.classify import classify_form  # noqa: E402
+from tax.extraction.images import iter_page_images  # noqa: E402
 from tax.extraction.providers import (  # noqa: E402
     ExtractedKV,
     LocalDigitalProvider,
@@ -132,6 +133,38 @@ def _decrypt_pdf(data: bytes, password: str) -> bytes | None:
         return None
 
 
+_TEXTRACT_CLIENT = None
+
+
+def _textract_client():
+    global _TEXTRACT_CLIENT
+    if _TEXTRACT_CLIENT is None:
+        import boto3
+
+        _TEXTRACT_CLIENT = boto3.Session(region_name='us-east-1').client('textract')
+    return _TEXTRACT_CLIENT
+
+
+def _textract_full_text(data: bytes, kind: DocKind) -> str:
+    """Full OCR text via DetectDocumentText (cheap), reading-order lines."""
+    try:
+        images = [data] if kind in (DocKind.png, DocKind.jpeg) else list(iter_page_images(data, kind))
+    except Exception:  # noqa: BLE001
+        return ''
+    pages = []
+    for image in images:
+        try:
+            resp = _textract_client().detect_document_text(Document={'Bytes': image})
+        except Exception:  # noqa: BLE001
+            continue
+        blocks = [b for b in resp.get('Blocks', []) if b.get('BlockType') == 'LINE']
+        blocks.sort(key=lambda b: (
+            round(float(b.get('Geometry', {}).get('BoundingBox', {}).get('Top', 0.0)), 2),
+            float(b.get('Geometry', {}).get('BoundingBox', {}).get('Left', 0.0))))
+        pages.append(chr(10).join(b.get('Text', '') for b in blocks))
+    return chr(10).join(p for p in pages if p)
+
+
 def _extract_document(doc_id: str, year: int, filename: str, data: bytes,
                       kind: DocKind, pdf_password: str | None) -> dict:
     """Pipeline for one document's bytes: local first, then AWS. Returns a
@@ -156,18 +189,31 @@ def _extract_document(doc_id: str, year: int, filename: str, data: bytes,
 
     # The local pass produced nothing readable for a box-level reader (or the
     # doc is a plain scan) - escalate to Textract FORMS.
-    if not facts and (not kvs or not _has_text(kvs) or form in (FormType.unknown, None)):
-        try:
-            aws = get_provider('aws')
-            aws_kvs = aws.extract(data, kind)
-        except NoPageImage:
+    box_level = form in (
+        FormType.w2, FormType.paystub, FormType.f1099_int, FormType.f1099_nec,
+        FormType.f1099_div, FormType.f1095_c, FormType.f3922,
+    )
+    if not facts and (not kvs or not _has_text(kvs) or form in (FormType.unknown, None) or box_level):
+        has_raster = True
+        if kind is DocKind.pdf:
+            try:
+                list(iter_page_images(data, kind))
+            except NoPageImage:
+                has_raster = False
+            except Exception:  # noqa: BLE001 - let aws surface the real error
+                has_raster = True
+        if not has_raster:
             note = 'no page image for Textract (vector PDF); local result kept'
             out['note'] = (out['note'] + '; ' if out['note'] else '') + note
             aws_kvs = []
-        except Exception as e:  # noqa: BLE001
-            note = f'aws failed: {e}'
-            out['note'] = (out['note'] + '; ' if out['note'] else '') + note
-            aws_kvs = []
+        else:
+            try:
+                aws = get_provider('aws')
+                aws_kvs = aws.extract(data, kind)
+            except Exception as e:  # noqa: BLE001
+                note = f'aws failed: {e}'
+                out['note'] = (out['note'] + '; ' if out['note'] else '') + note
+                aws_kvs = []
         if aws_kvs:
             form_aws = classify_form(aws_kvs)
             facts_aws = _dispatch_facts(form_aws, doc_id, year, aws_kvs,
@@ -180,6 +226,23 @@ def _extract_document(doc_id: str, year: int, filename: str, data: bytes,
                 form = form_aws
                 facts = facts_aws
                 method = ExtractionMethod.textract
+                out['provider'] = 'aws'
+
+    # FORMS sees fields, not titles - when its classification came back
+    # unknown, classify the full OCR text instead (cheap DetectDocumentText).
+    if (form is FormType.unknown or form is None) and has_raster:
+        try:
+            ocr_text = _textract_full_text(data, kind)
+        except Exception:  # noqa: BLE001
+            ocr_text = ''
+        if len(ocr_text.strip()) >= 40:
+            form_txt = classify_form([
+                ExtractedKV(key='__native_text__', value=ocr_text, confidence=0.6)])
+            if form_txt is not FormType.unknown:
+                form = form_txt
+                if not kvs:
+                    kvs = [ExtractedKV(key='__native_text__', value=ocr_text,
+                                       confidence=0.6)]
                 out['provider'] = 'aws'
 
     out['provider'] = out['provider'] or ('local' if kvs else None)
@@ -241,7 +304,17 @@ def _dedupe_w2_copies(year: int, report: dict) -> None:
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
-    year = int(args.year)
+    for ys in args.years:
+        year = int(ys)
+        try:
+            _ingest_year(year, args)
+        except SystemExit as e:
+            print(f'year {year}: {e}')
+        except Exception as e:  # noqa: BLE001
+            print(f'year {year}: FAILED {type(e).__name__}: {e}')
+
+
+def _ingest_year(year: int, args: argparse.Namespace) -> None:
     year_dir = ORG_ROOT / str(year)
     if not year_dir.is_dir():
         sys.exit(f'no folder: {year_dir}')
@@ -254,8 +327,13 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         'notes': [],
     }
 
+    skip = [s.strip().lower() for s in (args.skip or '').split(',') if s.strip()]
     for path in files:
         name = path.name
+        if any(s in name.lower() for s in skip):
+            report['notes'].append(f'{name}: skipped by --skip')
+            print(f'  SKIP {name}: matches --skip')
+            continue
         try:
             data = path.read_bytes()
         except OSError as e:
@@ -294,6 +372,7 @@ def cmd_ingest(args: argparse.Namespace) -> None:
                 report['skipped_existing'].append(name)
                 print(f'  SKIP {name}: already stored + extracted')
                 continue
+        print(f'  ... {name}: extracting')
         result = _extract_document(doc.id, year, name, data, kind, args.pdf_password or None)
         facts = result.pop('facts')
         patch = {
@@ -333,9 +412,11 @@ def main() -> None:
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     parser = argparse.ArgumentParser(description='Batch-ingest one tax year')
-    parser.add_argument('year', help='tax year, e.g. 2024')
+    parser.add_argument('years', nargs='+', help='tax year(s), e.g. 2024 2023')
     parser.add_argument('--pdf-password', default='',
                         help='password for password-protected PDFs')
+    parser.add_argument('--skip', default='',
+                        help='comma-separated filename substrings to skip');
     parser.add_argument('--force', action='store_true',
                         help='re-extract every stored document of the year, even extracted ones')
     args = parser.parse_args()
@@ -344,4 +425,11 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
+
+
+
+
+
+
 
