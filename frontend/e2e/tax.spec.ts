@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+﻿import { expect, test } from "@playwright/test";
 
 // The ten 2025 tax documents ingested from
 // Documents\Scans\Organized\Tax_Documents\2025 (see the 2025 fill-out session).
@@ -13,6 +13,7 @@ const DOC_NAMES = [
   "Form_3922_ESPP_Fidelity_2025.pdf",
   "2025_return.pdf",
   "2025_return_il.pdf",
+  "2025-Individual-TOD-4620-Consolidated-Form-1099_Patrick.pdf",
 ];
 
 test("tax prep 2025 shows all ten ingested documents", async ({ page }) => {
@@ -20,7 +21,7 @@ test("tax prep 2025 shows all ten ingested documents", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Tax Picture 2025" })).toBeVisible();
 
   const rows = page.locator(".tax-doc-row:not(.tax-doc-head)");
-  await expect(rows).toHaveCount(10);
+  await expect(rows).toHaveCount(11);
 
   for (const name of DOC_NAMES) {
     await expect(page.locator(".tax-doc-name", { hasText: name })).toBeVisible();
@@ -32,12 +33,12 @@ test("every 2025 document shows its detected form type and pipeline stage", asyn
 }) => {
   await page.goto("/tax");
   const rows = page.locator(".tax-doc-row:not(.tax-doc-head)");
-  await expect(rows).toHaveCount(10);
+  await expect(rows).toHaveCount(11);
 
-  // Nine documents reached 'extracted'; the NEC mailing cover stays 'classified'.
+  // Ten documents reached 'extracted'; the NEC mailing cover stays 'classified'.
   await expect(
     page.locator(".tax-doc-row:not(.tax-doc-head) .tax-stage-extracted"),
-  ).toHaveCount(9);
+  ).toHaveCount(10);
   await expect(
     page.locator(".tax-doc-row:not(.tax-doc-head) .tax-stage-classified"),
   ).toHaveCount(1);
@@ -62,7 +63,7 @@ test("every 2025 document shows its detected form type and pipeline stage", asyn
 
 test("tax prep 2025 screenshot for the record", async ({ page }) => {
   await page.goto("/tax");
-  await expect(page.locator(".tax-doc-row:not(.tax-doc-head)")).toHaveCount(10);
+  await expect(page.locator(".tax-doc-row:not(.tax-doc-head)")).toHaveCount(11);
   await page.screenshot({
     path: "e2e/artifacts/tax-2025.png",
     fullPage: true,
@@ -105,7 +106,8 @@ test("tax prep 2025 renders the as-filed summary layout", async ({ page }) => {
 
   // Year chips — five years (2027..2023), with the combined as-filed outcome
   // on the 2025 chip (federal owe + IL owe − VA refund).
-  await expect(page.locator(".tax-chip")).toHaveCount(5);
+  const expectedChips = new Date().getFullYear() + 1 - 2004 + 1;
+  await expect(page.locator(".tax-chip")).toHaveCount(expectedChips);
   await expect(page.locator(".tax-chip", { hasText: "Owe 8,811.00" })).toBeVisible();
 });
 
@@ -151,7 +153,9 @@ test("tax prep 2025 cross-checks the return against the documents", async ({
     page.locator(".tax-section", { hasText: "Dependents (Schedule 8812)" }),
   ).toContainText("Qualifying children");
 
-  // The cross-check: wages/interest tie, the dividend gap is surfaced, and
+  // The cross-check: wages/interest tie, the dividend gap is surfaced (the
+  // return's Schedule B shows NFS LLC 5,252.16 for the joint payer vs the
+  // 1,666.59 statement on file + the 277.96 individual statement), and
   // the capital row explains the statutory loss limit.
   const xc = page.locator(".tax-section", {
     hasText: "As-filed cross-check",
@@ -159,7 +163,7 @@ test("tax prep 2025 cross-checks the return against the documents", async ({
   await expect(xc).toBeVisible();
   await expect(
     xc.locator(".tax-kv-block", { hasText: "Ordinary dividends" }),
-  ).toContainText("3,863.41");
+  ).toContainText("3,585.45");
   await expect(
     xc.locator(".tax-kv-block", { hasText: "Ordinary dividends" }),
   ).toContainText("missing from the document set");

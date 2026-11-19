@@ -91,7 +91,12 @@ def classify_form(kvs: list[ExtractedKV]) -> FormType:
         return FormType.f3922
     if "u.s. individual income tax return" in text:
         return FormType.f1040
-    if "consolidated" in text or ("1099-div" in text and "1099-b" in text):
+    # The consolidated statement carries multiple sub-forms; route it to the DIV
+    # container reader (which parses DIV/INT/MISC boxes + the 1099-B summary).
+    # A single "1099-div" token is enough: Fidelity's individual-account
+    # statements are DIV+INT without a 1099-B section, and the pure-INT bank
+    # statements never mention 1099-DIV (their branch follows).
+    if "consolidated" in text or "1099-div" in text:
         return FormType.f1099_div
     if "1099-nec" in text or "nonemployee compensation" in text:
         return FormType.f1099_nec

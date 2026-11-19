@@ -259,6 +259,35 @@ def _extract_document(doc_id: str, year: int, filename: str, data: bytes,
     return out
 
 
+def doc_sha_of(data: bytes) -> str:
+    return storage.sha256(data)
+
+
+def _dedupe_ledger_path() -> Path:
+    return BACKEND / 'txn_data' / 'tax_reconcile' / 'dedupe_removed.json'
+
+
+def _read_dedupe_ledger() -> set:
+    import json
+
+    path = _dedupe_ledger_path()
+    if not path.is_file():
+        return set()
+    return {e['sha256'] for e in json.loads(path.read_text(encoding='utf-8'))}
+
+
+def _record_dedupe_removal(doc_id: str, year: int, filename: str) -> None:
+    import json
+
+    path = _dedupe_ledger_path()
+    entries = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else []
+    if all(e['sha256'] != doc_id for e in entries):
+        entries.append({'sha256': doc_id, 'year': year, 'filename': filename,
+                        'removed_at': datetime.now().isoformat(timespec='seconds')})
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(entries, indent=2), encoding='utf-8')
+
+
 def _w2_copy_rank(filename: str) -> int:
     """Lower is better: Copy B (the filed-with-return copy) is preferred."""
     low = filename.lower()
@@ -289,11 +318,14 @@ def _dedupe_w2_copies(year: int, report: dict) -> None:
             doc, facts = member
             box1 = next((str(f.value) for f in facts if f.field_code == 'box_1_wages'), '')
             has_wages = 0 if box1.strip(' ,.$') else 1
-            return (has_wages, _w2_copy_rank(doc.original_filename), -len(facts))
+            low = doc.original_filename.lower()
+            informative = 0 if low.startswith(('w2', 'w-2', '1099')) else 1
+            return (has_wages, informative, _w2_copy_rank(doc.original_filename), -len(facts))
         members.sort(key=_rank)
         keep = members[0][0]
         for doc, _facts in members[1:]:
             storage.delete_document(year, doc.id)
+            _record_dedupe_removal(doc.id, year, doc.original_filename)
             report['w2_dedupe_removed'].append({
                 'removed': doc.original_filename,
                 'kept': keep.original_filename,
@@ -363,6 +395,11 @@ def _ingest_year(year: int, args: argparse.Namespace) -> None:
                 print(f'  SKIP {name}: unsupported file kind')
                 continue
 
+        dedupe_ledger = _read_dedupe_ledger()
+        if doc_sha_of(data) in dedupe_ledger:
+            report['notes'].append(f'{name}: previously removed by W-2 dedupe, skipped')
+            print(f'  SKIP {name}: previously removed by W-2 dedupe')
+            continue
         doc, created = storage.add_document(year, name, data)
         if not created:
             existing = storage.get_document(year, doc.id)
@@ -425,6 +462,8 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
+
+
 
 
 
