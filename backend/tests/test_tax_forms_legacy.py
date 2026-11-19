@@ -58,3 +58,31 @@ def test_repeated_page_header_does_not_reblock():
     # one pre-marker Federal block + ONE Virginia block (page header ignored)
     va = [b for name, b in blocks if name == "Virginia"]
     assert len(va) == 1 and len(va[0]) == 2
+
+
+KANG_2024_STYLE = (
+    "Filing Instructions\n"
+    "PATRICK M. & SARA C. FLANIGAN\n"
+    "2024 U.S. INDIVIDUAL INCOME TAX RETURN\n"
+    "YOU HAVE A BALANCE DUE OF..........................$        1,515\n"
+    "Filing Instructions\n"
+    "2024 VIRGINIA INCOME TAX RETURN\n"
+    "YOU HAVE A BALANCE DUE OF..........................$          625\n"
+)
+
+
+def test_kang_package_splits_federal_and_virginia():
+    blocks = _state_blocks(KANG_2024_STYLE.splitlines())
+    names = [name for name, _ in blocks]
+    assert "Federal" in names and "Virginia" in names
+
+
+def test_kang_package_lifts_federal_and_virginia_balance_due():
+    facts = extract_f1040_facts(
+        "doc-kang", 2024, _kvs(KANG_2024_STYLE),
+        method=ExtractionMethod.native_pdf,
+    )
+    codes = {f.field_code: f.value for f in facts}
+    assert codes["ret_amount_owed"] == "1515.00"
+    assert codes["ret_st_va_state_name"] == "Virginia"
+    assert codes["ret_st_va_balance_due"] == "625.00"

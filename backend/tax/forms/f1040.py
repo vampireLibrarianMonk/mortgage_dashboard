@@ -76,6 +76,9 @@ _EFI_MARKER = re.compile(r"(?i)electronic\s+filing\s+instructions")
 _HRB_MARKER = re.compile(
     r"(?i)(?:federal|state)\s+tax\s+return\s+filing\s+instructions"
 )
+# Preparer (Kang & Thomas) package page headers: "Filing Instructions" over
+# "2024 U.S. INDIVIDUAL INCOME TAX RETURN" / "2024 VIRGINIA INCOME TAX RETURN".
+_KANG_MARKER = re.compile(r"(?i)^\s*filing\s+instructions\b")
 _EFI_JURISDICTIONS = (
     "federal", "virginia", "georgia", "north carolina", "maryland",
     "illinois", "north dakota", "south carolina", "west virginia",
@@ -251,15 +254,32 @@ def _state_blocks(lines: list[str]) -> list[tuple[str, list[str]]]:
     while i < n:
         line = lines[i]
         if (_EFI_MARKER.search(line) or _HRB_MARKER.search(line)
-                or _STATE_MARKER.search(line)):
-            window = " ".join(lines[i : i + 3])
+                or _STATE_MARKER.search(line) or _KANG_MARKER.search(line)):
+            # Jurisdiction from the marker line plus following lines UP TO the
+            # next marker - a lookahead that crosses into the next marker
+            # would attribute this block to the wrong jurisdiction.
+            window_parts = [line]
+            j = i + 1
+            while (j < n and len(window_parts) < 6
+                   and not (_EFI_MARKER.search(lines[j])
+                            or _HRB_MARKER.search(lines[j])
+                            or _STATE_MARKER.search(lines[j])
+                            or _KANG_MARKER.search(lines[j]))):
+                window_parts.append(lines[j])
+                j += 1
+            window = " ".join(window_parts)
             jurisdiction = current_name
-            for name in _EFI_JURISDICTIONS:
-                if name != "federal" and re.search(
-                    r"(?i)\b" + re.escape(name) + r"\b", window
-                ):
-                    jurisdiction = name.title()
-                    break
+            if re.search(r"(?i)virginia\s+income\s+tax\s+return", window):
+                jurisdiction = "Virginia"
+            elif re.search(r"(?i)u\.s\.\s+individual\s+income\s+tax\s+return", window):
+                jurisdiction = "Federal"
+            else:
+                for name in _EFI_JURISDICTIONS:
+                    if name != "federal" and re.search(
+                        r"(?i)\b" + re.escape(name) + r"\b", window
+                    ):
+                        jurisdiction = name.title()
+                        break
             if jurisdiction != current_name or not current:
                 blocks.append((current_name, current))
                 current_name = jurisdiction.title()
