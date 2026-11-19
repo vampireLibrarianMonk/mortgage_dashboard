@@ -152,6 +152,69 @@ def _signed_cluster(
     return tokens
 
 
+def _va760cg_summary_rows(run: list[float]) -> dict | None:
+    """Parse a VA 760CG page-1 value run into the as-filed card rows.
+
+    Works across print eras (TurboTax 2025, CPA 2022-2023) because every row
+    is validated by an arithmetic identity: FAGI == VAGI (no add/sub);
+    standard + exemptions (+ deductions) == the deductions subtotal;
+    VAGI - subtotal == taxable; net == tax - spouse adjustment; the
+    settlement (refund/owe) echoes twice after the payments total, which
+    equals the two withholdings. Anything that does not close returns None —
+    honest absence, never a guessed row."""
+    if len(run) < 9:
+        return None
+    fagi, vagi = run[0], run[2]
+    if fagi <= 0 or abs(fagi - vagi) > 0.005:
+        return None
+    sub_idx = None
+    for s in range(4, min(8, len(run) - 1)):
+        mid = run[3:s]
+        if len(mid) not in (2, 3):
+            continue
+        if abs(sum(mid) - run[s]) <= 0.005 and abs(vagi - run[s] - run[s + 1]) <= 0.005:
+            sub_idx = s
+            break
+    if sub_idx is None:
+        return None
+    taxable = run[sub_idx + 1]
+    tax_idx = sub_idx + 2
+    if tax_idx >= len(run):
+        return None
+    tax = run[tax_idx]
+    if tax <= 0:
+        return None
+    net = net_idx = None
+    for idx in range(tax_idx + 1, min(tax_idx + 4, len(run))):
+        sta = run[idx]
+        if not (0 < sta < tax):
+            continue
+        for offset in (1, 2):
+            j = idx + offset
+            if j < len(run) and abs(tax - sta - run[j]) <= 0.005:
+                net, net_idx = run[j], j
+                break
+        if net_idx is not None:
+            break
+    payments = settlement = None
+    if net_idx is not None:
+        for k in range(net_idx + 1, len(run) - 2):
+            if (
+                abs(run[k + 1] - run[k + 2]) <= 0.005
+                and abs(run[k] - net - run[k + 1]) <= 0.005
+            ):
+                payments, settlement = run[k], run[k + 1]
+                break
+    out: dict = {"taxable": taxable, "tax": tax}
+    if payments is not None and net is not None and settlement is not None:
+        out["payments"] = payments
+        if payments > net:
+            out["refund"] = settlement
+        else:
+            out["balance_due"] = settlement
+    return out
+
+
 def _money_cluster(
     lines: list[str], start_idx: int, stop_pat: re.Pattern[str], max_lines: int = 40
 ) -> list[float]:
@@ -522,6 +585,35 @@ def extract_f1040_facts(
                             add("ret_fed_ctc_credit", _FIELD_LABELS["ret_fed_ctc_credit"],
                                 f"{credit:.2f}", conf=0.9)
                 break
+
+        # VA 760CG form pages inside CPA/older packages (2008-2023 era): the
+        # value run after the VA760CG marker parses into the as-filed Virginia
+        # card rows when every arithmetic identity closes. Skipped when the
+        # state block above already produced Virginia facts (2025-style
+        # e-file packages carry the instructions card this handles already).
+        if not any(f.field_code == "ret_st_va_taxable_income" for f in facts):
+            for i, ln in enumerate(lines):
+                if not _VA760CG_HEADER.search(ln):
+                    continue
+                run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=25)
+                rows = _va760cg_summary_rows(run)
+
+                def _st_add(code: str, value: str, money: bool = True) -> None:
+                    add(f"ret_st_va_{code}",
+                        f"As-filed Virginia {code.replace('_', ' ')}",
+                        value, conf=0.9, money=money)
+
+                if rows:
+                    _st_add("state_name", "Virginia", money=False)
+                    _st_add("taxable_income", f"{rows['taxable']:.2f}")
+                    _st_add("total_tax", f"{rows['tax']:.2f}")
+                    if rows.get("payments") is not None:
+                        _st_add("total_payments", f"{rows['payments']:.2f}")
+                    if rows.get("refund") is not None:
+                        _st_add("refund", f"{rows['refund']:.2f}")
+                    if rows.get("balance_due") is not None:
+                        _st_add("balance_due", f"{rows['balance_due']:.2f}")
+                    break
 
     facts.sort(key=lambda f: f.field_code)
     return facts

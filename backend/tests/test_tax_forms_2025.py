@@ -278,6 +278,29 @@ def test_f1040_income_composition_capital_loss_and_dependents():
     assert by["ret_fed_ctc_credit"].value == "2200.00"
 
 
+# CPA-prepared package (2022-2023 era): the VA 760CG page's value run parses
+# into the as-filed Virginia card when every arithmetic identity closes.
+CPA_VA_SAMPLE = (
+    "2023 U.S. INDIVIDUAL INCOME TAX RETURN\n"
+    "2023 VIRGINIA INDIVIDUAL INCOME TAX RETURN\n"
+    "2023 VA760CG\n"
+    "PATRICK\n"
+    "220353.\n220353.\n220353.\n16000.\n1860.\n17860.\n202493.\n11386.\n68598.\n"
+    "259.\n11127.\n8059.\n3241.\n11300.\n173.\n173.\n"
+    "314074269\n216855799\n"
+)
+
+
+def test_f1040_cpa_era_va760cg_card():
+    facts = extract_f1040_facts("doc5", 2023, native(CPA_VA_SAMPLE))
+    by = {f.field_code: f for f in facts}
+    assert by["ret_st_va_state_name"].value == "Virginia"
+    assert by["ret_st_va_taxable_income"].value == "202493.00"
+    assert by["ret_st_va_total_tax"].value == "11386.00"
+    assert by["ret_st_va_total_payments"].value == "11300.00"
+    assert by["ret_st_va_refund"].value == "173.00"
+
+
 # --- as-filed Illinois return (native text) -----------------------------------
 
 IL_SAMPLE = (
