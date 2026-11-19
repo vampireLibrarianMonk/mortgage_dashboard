@@ -57,9 +57,28 @@ _ROWS = [
 ]
 
 _TAIL_MONEY = re.compile(r"(-?\$?[\d,]+\.\d{2})\s*$")
+# Same tail position, but whole-dollar amounts allowed ONLY when a literal $
+# anchors them — "AMOUNT TO BE REFUNDED TO YOU.....$ 737" lifts 737, while a
+# bare line-number token ("...total tax. 39") still cannot match.
+_TAIL_MONEY_DOLLAR = re.compile(r"(-?\$[\s]*[\d,]+(?:\.\d{2})?)\s*$")
 
 _STATE_MARKER = re.compile(
     r"Electronic Filing Instructions for your (\d{4})\s+(.+?)\s+Tax Return", re.I
+)
+# Older TaxAct/HRB prints phrase the block markers differently ("Federal
+# Electronic Filing Instructions Tax Year 2014", "2014 Virginia Electronic
+# Filing Instructions", "2015 Virginia Electronic Filing Instructions - …").
+# Any "Electronic Filing Instructions" line starts/continues a block; the
+# jurisdiction comes from the marker line plus its neighbors.
+_EFI_MARKER = re.compile(r"(?i)electronic\s+filing\s+instructions")
+# H&R Block-style summary sheets ("2021 Federal Tax Return Filing
+# Instructions" / "2021 STATE TAX RETURN FILING INSTRUCTIONS VIRGINIA").
+_HRB_MARKER = re.compile(
+    r"(?i)(?:federal|state)\s+tax\s+return\s+filing\s+instructions"
+)
+_EFI_JURISDICTIONS = (
+    "federal", "virginia", "georgia", "north carolina", "maryland",
+    "illinois", "north dakota", "south carolina", "west virginia",
 )
 _SLUG_ABBR = {"virginia": "va", "illinois": "il"}
 
@@ -203,26 +222,52 @@ _ST_ROWS = [
 
 def _last_amount(s: str) -> str | None:
     m = _TAIL_MONEY.search(s)
-    return m.group(1) if m else None
+    if m:
+        return m.group(1)
+    m = _TAIL_MONEY_DOLLAR.search(s)
+    if m:
+        val = m.group(1).replace("$", "").replace(" ", "")
+        # normalize whole-dollar to two decimals so downstream num() parses
+        return val if "." in val else val + ".00"
+    return None
 
 
 def _state_blocks(lines: list[str]) -> list[tuple[str, list[str]]]:
     """Split the e-file package into (jurisdiction, lines) blocks.
 
-    Each 'Electronic Filing Instructions for your <year> <jurisdiction> Tax
-    Return' marker starts a block; everything before the first marker is the
-    Federal block. The real 2025 package carries Federal + Virginia blocks."""
+    Each 'Electronic Filing Instructions' marker starts a block; everything
+    before the first marker is the Federal block. The 2025 package carries
+    Federal + Virginia blocks in the '...for your 2025 Virginia Tax Return'
+    phrasing; older TaxAct/HRB prints phrase the same markers differently
+    ('Federal Electronic Filing Instructions Tax Year 2014', '2014 Virginia
+    Electronic Filing Instructions'), possibly repeating the header on every
+    page of one block — a repeated marker for the jurisdiction we are already
+    in is treated as a page header, not a new block."""
     blocks: list[tuple[str, list[str]]] = []
     current_name = "Federal"
     current: list[str] = []
-    for line in lines:
-        m = _STATE_MARKER.search(line)
-        if m:
-            blocks.append((current_name, current))
-            current_name = m.group(2).strip().title()
-            current = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        if (_EFI_MARKER.search(line) or _HRB_MARKER.search(line)
+                or _STATE_MARKER.search(line)):
+            window = " ".join(lines[i : i + 3])
+            jurisdiction = current_name
+            for name in _EFI_JURISDICTIONS:
+                if name != "federal" and re.search(
+                    r"(?i)\b" + re.escape(name) + r"\b", window
+                ):
+                    jurisdiction = name.title()
+                    break
+            if jurisdiction != current_name or not current:
+                blocks.append((current_name, current))
+                current_name = jurisdiction.title()
+                current = []
+            i += 1
             continue
         current.append(line)
+        i += 1
     blocks.append((current_name, current))
     return blocks
 
@@ -258,15 +303,17 @@ def extract_f1040_facts(
     for jurisdiction, block in _state_blocks(lines):
         if jurisdiction == "Federal":
             federal_seen = True
+            used_lines: set[int] = set()
             for pat, code in _ROWS:
                 if code in seen:
                     continue
-                for line in block:
-                    if not pat.search(line):
+                for idx, line in enumerate(block):
+                    if idx in used_lines or not pat.search(line):
                         continue
                     amt = _last_amount(line)
                     if amt is None:
                         continue
+                    used_lines.add(idx)
                     add(code, _FIELD_LABELS[code], amt)
                     break
             if "married filing jointly" in " ".join(block).lower():

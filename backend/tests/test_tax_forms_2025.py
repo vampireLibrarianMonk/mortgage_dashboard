@@ -1,4 +1,4 @@
-"""Tax Prep 2025-corpus tests — classification + the new form readers.
+﻿"""Tax Prep 2025-corpus tests — classification + the new form readers.
 
 No AWS, no real files. The 1099s feed synthetic KVs (the shape Textract
 delivers); the consolidated statement and the federal/Illinois returns feed
@@ -185,11 +185,11 @@ FEDERAL_SAMPLE = (
     # NOT parsed — two agreeing tokens there cannot be attributed to a
     # specific line (line 3 vs 8f), so no 8f fact is lifted.
     "For Paperwork Reduction Act Notice. Form 8889 (2025) Created 3/28/25\n"
-    "Patrick Flanigan 574-06-7812\n"
+    "Patrick Flanigan 123-45-6789\n"
     "8,550.\n4,495.\n4,495.\n0.\n0.\n8,550.\n8,550.\n8,550.\n4,055.\n0.\n"
     "BAA REV 03/25/26 TTO\n"
     "For Paperwork Reduction Act Notice. Form 8889 (2025) Created 3/28/25\n"
-    "Sara C Flanigan 227-63-9665\n"
+    "Sara C Flanigan 987-65-4321\n"
     "8,550.\n4,495.\n4,495.\n0.\n0.\n8,550.\n8,550.\n8,550.\n4,055.\n0.\n"
     "BAA REV 03/25/26 TTO\n"
     "Electronic Filing Instructions for your 2025 Virginia Tax Return\n"
@@ -338,7 +338,7 @@ NFCU_INT_SAMPLE = [
     kv("OMB NO.", "1545-0112"),
     kv("AMOUNT REPORTED TO IRS:", "$580.45 $0.00 $0.00 $0.00"),
     kv("FOR TAX YEAR", "2025"),
-    kv("TAXPAYER ID NUMBER", "XXX-XX-9665"),
+    kv("TAXPAYER ID NUMBER", "XXX-XX-4321"),
     kv("SVGS", "1879190005 $31.88"),
     kv("MMSA", "3228279117 $546.44"),
     kv("CHECKING", "7007893691 $2.13"),
@@ -373,3 +373,4 @@ def test_person_from_filename_covers_1099_nec():
     assert _person_from_filename(
         "2025-Joint-WROS-TOD-0625-Consolidated-Form-1099.pdf"
     ) is None
+
