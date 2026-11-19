@@ -226,7 +226,7 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
             # Years with several 1040-classified prints (e.g. a signature page
             # filed after the return) keep the doc with the MOST facts — the
             # filename-sorted last one can be a bare signature page.
-            if as_filed_federal and len(facts) <= len(fed_fvals or {}):
+            if as_filed_federal and len(fvals) <= len(fed_fvals or {}):
                 continue
             as_filed_federal = {
                 "agi": _num(fvals.get("ret_agi")),
