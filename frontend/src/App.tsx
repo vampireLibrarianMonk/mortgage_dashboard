@@ -164,7 +164,7 @@ function App() {
     commitScenarios(next, active);
   };
 
-  // Manual "Refresh services" â€” runs the deploy health check on demand (relaunch
+  // Manual "Refresh services" — runs the deploy health check on demand (relaunch
   // the proxy / sibling app if down). Replaces the old every-5-min pop-up task.
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
@@ -173,7 +173,7 @@ function App() {
     setRefreshMsg(null);
     try {
       const res = await systemRefresh();
-      setRefreshMsg(res.ok ? "âœ” services healthy" : "âš  see details");
+      setRefreshMsg(res.ok ? "✔ services healthy" : "⚠ see details");
       // Surface the check's output in the console for the curious.
       console.info("service refresh:\n" + res.output.join("\n"));
     } catch {
@@ -244,12 +244,12 @@ function App() {
             disabled={refreshing}
             title="Re-check services and restart the proxy / other app if they're down"
           >
-            {refreshing ? "âŸ³ Refreshingâ€¦" : "âŸ³ Refresh services"}
+            {refreshing ? "⟳ Refreshing…" : "⟳ Refresh services"}
           </button>
           {refreshMsg && <span className="refresh-svc-msg">{refreshMsg}</span>}
           {page === "dashboard" && result && (
             <button type="button" className="print-btn" onClick={handlePrint}>
-              ðŸ“„ Export PDF
+              📄 Export PDF
             </button>
           )}
         </div>
@@ -305,7 +305,7 @@ function App() {
           <ExtraPrincipalSection data={state.extra_principal} onChange={setSection("extra_principal")} />
         </div>
         <div className="results-column">
-          {loading && <p className="loading">Calculatingâ€¦</p>}
+          {loading && <p className="loading">Calculating…</p>}
           {error && <p className="error">{error}</p>}
           {result && <ResultsPanel result={result} purchaseMode={state.house_purchase.purchase_mode} discretionary={state.discretionary} profileId={activeProfileId} />}
         </div>
