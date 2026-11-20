@@ -297,6 +297,36 @@ def _va_card_summary_rows(run: list[float]) -> dict | None:
     return out
 
 
+def _cpa_fed_rows(run: list[float], agi_ref: float | None) -> dict | None:
+    """CPA-era federal 1040 page-1 value run: [wages, ..., total income,
+    AGI, standard, QBI, taxable, ...]. The AGI must equal the VA 760's
+    FAGI from the same package (line 1 of the 760 IS the federal AGI),
+    and the chain AGI - standard (- QBI) == taxable must close over a
+    sliding window (an AGI echo token can sit between rows). Otherwise
+    None."""
+    if len(run) < 5:
+        return None
+    wages = run[0]
+    if wages <= 5000:
+        return None
+    agi = None
+    if agi_ref is not None:
+        agi = next((t for t in run[1:] if abs(t - agi_ref) <= 0.005), None)
+    if agi is None:
+        return None
+    a_idx = run.index(agi)
+    for j in range(a_idx + 1, len(run) - 2):
+        std, qbi, taxable = run[j], run[j + 1], run[j + 2]
+        if std > 5000 and qbi >= 0 and abs(agi - std - qbi - taxable) <= 0.005:
+            return {"wages": wages, "agi": agi, "taxable": taxable}
+    for j in range(a_idx + 1, len(run) - 1):
+        std, taxable = run[j], run[j + 1]
+        if std > 5000 and abs(agi - std - taxable) <= 0.005:
+            return {"wages": wages, "agi": agi, "taxable": taxable}
+    return None
+
+
+
 def _money_cluster(
     lines: list[str], start_idx: int, stop_pat: re.Pattern[str], max_lines: int = 40
 ) -> list[float]:
@@ -700,6 +730,35 @@ def extract_f1040_facts(
                 if rows:
                     _emit_va_rows(rows)
                     break
+        # CPA-era packages (2022-2024): the federal 1040 page-1 value
+            # run parses with the AGI tied to the VA 760's FAGI (line 1 of
+            # the 760 IS the federal AGI) and the AGI - standard - QBI ==
+            # taxable chain.
+        if not any(f.field_code == "ret_fed_wages" for f in facts):
+            va_fagi = None
+            for i, ln in enumerate(lines):
+                if _VA760CG_HEADER.search(ln):
+                    va_run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=25)
+                    if va_run:
+                        va_fagi = va_run[0]
+                    break
+            for i, ln in enumerate(lines):
+                if not re.search(r"U\.S\. Individual Income Tax Return", ln):
+                    continue
+                run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=40)
+                rows = _cpa_fed_rows(run, va_fagi)
+                if rows:
+                    codes = ("ret_fed_wages", "ret_agi", "ret_taxable_income")
+                    facts[:] = [f for f in facts if not (
+                        f.field_code in codes and f.value in (None, ""))]
+                    for code, val in (("ret_fed_wages", rows["wages"]),
+                                      ("ret_agi", rows["agi"]),
+                                      ("ret_taxable_income", rows["taxable"])):
+                        if not any(f.field_code == code for f in facts):
+                            add(code, _FIELD_LABELS.get(code, code),
+                                f"{val:.2f}", conf=0.9)
+                    break
+
             # Still nothing: H&R Block state cards and standalone TaxAct 760
             # prints (2008-2020 era) — the universal card parser over both
             # markers, tolerant of the label pollution those prints carry
