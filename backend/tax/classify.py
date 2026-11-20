@@ -81,6 +81,17 @@ def classify_form(kvs: list[ExtractedKV]) -> FormType:
         return FormType.k1
     if "illinois" in text and "income tax" in text:
         return FormType.f1040_il
+    # Virginia individual income tax returns — standalone 760/760CG prints and
+    # CPA-prepared packages. Routed to the f1040 package reader, which parses
+    # the as-filed Virginia card from the VA760CG page / state card. This must
+    # run before the W-2 fallback: a VA 760 mentions W-2 withholding and would
+    # otherwise be misread as a W-2 (the 2013 return was).
+    if (
+        "virginia individual income tax return" in text
+        or "va760cg" in text
+        or ("form 760" in text and "virginia" in text)
+    ):
+        return FormType.f1040
     # A genuine Form 1040 page prints its own OMB number (1545-0074) — on
     # every 1040 page and on no other form. E-file packages embed the 1099s
     # and 3922s they report (so the corpus may mention "3922" or

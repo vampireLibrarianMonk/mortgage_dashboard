@@ -301,6 +301,52 @@ def test_f1040_cpa_era_va760cg_card():
     assert by["ret_st_va_refund"].value == "173.00"
 
 
+# H&R Block state card (2019 era): labeled rows up front, the value run
+# after the checklist header.
+HR_VA_SAMPLE = (
+    "2019 STATE TAX RETURN FILING INSTRUCTIONS\n"
+    "Total Payments\nTotal Tax\nAmount You Owe\nRefund Amount\n"
+    "Check List (2019) STCHECK-1WV 1.0\n"
+    "574067812\n227639665\nN\nFLAN\nNEGR\n"
+    "175848.\n175848.\n9000.\n259.\n9229.\n164988.\n10860.\n1860.\n175848.\n"
+    "8970.\n62713.\n5966.\n3163.\n9129.\n159.\n44.\n203.\n"
+)
+
+
+def test_f1040_hr_state_card_2019():
+    facts = extract_f1040_facts("doc6", 2019, native(HR_VA_SAMPLE))
+    by = {f.field_code: f for f in facts}
+    assert by["ret_st_va_state_name"].value == "Virginia"
+    assert by["ret_st_va_taxable_income"].value == "164988.00"
+    assert by["ret_st_va_total_tax"].value == "9229.00"
+    assert by["ret_st_va_total_payments"].value == "9129.00"
+    assert by["ret_st_va_refund"].value == "159.00"
+
+
+# TaxAct standalone 760 (2011 era): the page carries dozens of row-number
+# label tokens before the values — the arithmetic gates must ignore them.
+TAXACT_VA_SAMPLE = (
+    "VA760CG 2011\n"
+    "Individual Income Tax Return\n"
+    "1.\n2.\n7.\n9.\n10.\n11.\n15.\n16.\n19.\n25.\n5.\n6.\n12.\n3.\n8.\n13.\n"
+    "14.\n17.\n27.\n28.\n26.\n22.\n23.\n20.\n21.\n24.\n"
+    "1.\n2.\n5.\n6.\n7.\n8.\n10.\n12.\n16.\n19.\n20.\n21.\n22.\n23.\n25.\n26.\n"
+    "27.\n28.\n24.10\n11.\n13.\n14.\n15.\n17.3\n9.\n"
+    "35383.\n35383.\n3000.\n3000.\n32383.\n3000.\n930.\n3930.\n28453.\n1379.\n"
+    "1379.\n1812.\n1812.\n433.\n117.\n316.\n"
+)
+
+
+def test_f1040_taxact_standalone_va760_2011():
+    facts = extract_f1040_facts("doc7", 2011, native(TAXACT_VA_SAMPLE))
+    by = {f.field_code: f for f in facts}
+    assert by["ret_st_va_state_name"].value == "Virginia"
+    assert by["ret_st_va_taxable_income"].value == "28453.00"
+    assert by["ret_st_va_total_tax"].value == "1379.00"
+    assert by["ret_st_va_total_payments"].value == "1812.00"
+    assert by["ret_st_va_refund"].value == "433.00"
+
+
 # --- as-filed Illinois return (native text) -----------------------------------
 
 IL_SAMPLE = (

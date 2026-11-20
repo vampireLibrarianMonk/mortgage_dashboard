@@ -102,6 +102,7 @@ _MONEY_TOKEN = re.compile(r"\b\d[\d,]*\.\d{0,2}")
 _BAA_STAMP = re.compile(r"BAA REV")
 _VA760CG_HEADER = re.compile(r"VA760CG")
 _VA_STAMP = re.compile(r"REV \d{2}/\d{2}/\d{2}")
+_STATE_CARD_MARKER = re.compile(r"STATE TAX RETURN FILING INSTRUCTIONS", re.I)
 
 # Footer regexes are year-parametrized: the e-file print stamps each form
 # footer with its tax year ("Form 8889 (2025) Created"), so older years'
@@ -208,6 +209,87 @@ def _va760cg_summary_rows(run: list[float]) -> dict | None:
     out: dict = {"taxable": taxable, "tax": tax}
     if payments is not None and net is not None and settlement is not None:
         out["payments"] = payments
+        if payments > net:
+            out["refund"] = settlement
+        else:
+            out["balance_due"] = settlement
+    return out
+
+
+def _va_tax(taxable: float) -> float:
+    """Virginia's statutory schedule (2/3/5/5.75% brackets, unchanged since
+    1987). The printed tax tables track this formula within a few dollars, so
+    it serves as a cross-era gate on which run token is the tax."""
+    t = max(0.0, taxable)
+    return (
+        0.02 * min(t, 3000)
+        + 0.03 * max(0.0, min(t, 5000) - 3000)
+        + 0.05 * max(0.0, min(t, 17000) - 5000)
+        + 0.0575 * max(0.0, t - 17000)
+    )
+
+
+def _va_card_summary_rows(run: list[float]) -> dict | None:
+    """Parse a state-card / standalone-760 value run (H&R Block and TaxAct
+    prints, 2008-2020 era) into the as-filed Virginia rows.
+
+    The runs are label-polluted and unordered, so every row is anchored by
+    arithmetic: FAGI is the first substantial token; the taxable income is
+    found through the Virginia tax schedule (the formula reproduces the
+    printed table tax within its drift); the spouse adjustment is the small
+    token whose subtraction yields the printed net; payments are the adjacent
+    withholding sum (or the doubled withholding echo); and the settlement
+    must equal |payments - net| AND appear in the run. Anything that does not
+    close returns None."""
+    fagi = next((t for t in run if t > 5000), None)
+    if fagi is None:
+        return None
+    fagi_idx = run.index(fagi)
+    taxable = tax = None
+    for t in run[fagi_idx + 1:]:
+        if not (5000 < t < fagi):
+            continue
+        va = _va_tax(t)
+        match = next((x for x in run if x > 0 and abs(x - va) <= 25), None)
+        if match is not None:
+            taxable, tax = t, match
+            break
+    if taxable is None:
+        return None
+    sta = net = None
+    for s in run:
+        if 0 < s < min(tax, 1000):
+            target = round(tax - s, 2)
+            if any(abs(x - target) <= 0.005 for x in run):
+                sta, net = s, target
+                break
+    if net is None:
+        net = tax
+    payments = None
+    for k in range(len(run) - 2):
+        a, b, c = run[k], run[k + 1], run[k + 2]
+        if a > 100 and abs(a + b - c) <= 0.005 and any(
+            abs(x - abs(c - net)) <= 0.005 for x in run
+        ):
+            payments = c
+            break
+    if payments is None:
+        for k in range(len(run) - 1):
+            x = run[k]
+            if (
+                x > 100
+                and abs(x - tax) > 0.005
+                and abs(x - fagi) > 0.005
+                and abs(run[k + 1] - x) <= 0.005
+                and any(abs(y - abs(x - net)) <= 0.005 for y in run)
+            ):
+                payments = x
+                break
+    if payments is None:
+        return {"taxable": taxable, "tax": tax}
+    settlement = round(abs(payments - net), 2)
+    out: dict = {"taxable": taxable, "tax": tax, "payments": payments}
+    if any(abs(x - settlement) <= 0.005 for x in run):
         if payments > net:
             out["refund"] = settlement
         else:
@@ -592,28 +674,49 @@ def extract_f1040_facts(
         # state block above already produced Virginia facts (2025-style
         # e-file packages carry the instructions card this handles already).
         if not any(f.field_code == "ret_st_va_taxable_income" for f in facts):
+            def _st_add(code: str, value: str, money: bool = True) -> None:
+                add(f"ret_st_va_{code}",
+                    f"As-filed Virginia {code.replace('_', ' ')}",
+                    value, conf=0.9, money=money)
+
+            def _emit_va_rows(rows: dict) -> None:
+                _st_add("state_name", "Virginia", money=False)
+                _st_add("taxable_income", f"{rows['taxable']:.2f}")
+                _st_add("total_tax", f"{rows['tax']:.2f}")
+                if rows.get("payments") is not None:
+                    _st_add("total_payments", f"{rows['payments']:.2f}")
+                if rows.get("refund") is not None:
+                    _st_add("refund", f"{rows['refund']:.2f}")
+                if rows.get("balance_due") is not None:
+                    _st_add("balance_due", f"{rows['balance_due']:.2f}")
+
+            # CPA-era packages: the VA760CG page's own value run.
             for i, ln in enumerate(lines):
                 if not _VA760CG_HEADER.search(ln):
                     continue
-                run = _signed_cluster(lines, i, _BAA_STAMP, max_lines=25)
-                rows = _va760cg_summary_rows(run)
-
-                def _st_add(code: str, value: str, money: bool = True) -> None:
-                    add(f"ret_st_va_{code}",
-                        f"As-filed Virginia {code.replace('_', ' ')}",
-                        value, conf=0.9, money=money)
-
+                rows = _va760cg_summary_rows(
+                    _signed_cluster(lines, i, _BAA_STAMP, max_lines=25)
+                )
                 if rows:
-                    _st_add("state_name", "Virginia", money=False)
-                    _st_add("taxable_income", f"{rows['taxable']:.2f}")
-                    _st_add("total_tax", f"{rows['tax']:.2f}")
-                    if rows.get("payments") is not None:
-                        _st_add("total_payments", f"{rows['payments']:.2f}")
-                    if rows.get("refund") is not None:
-                        _st_add("refund", f"{rows['refund']:.2f}")
-                    if rows.get("balance_due") is not None:
-                        _st_add("balance_due", f"{rows['balance_due']:.2f}")
+                    _emit_va_rows(rows)
                     break
+            # Still nothing: H&R Block state cards and standalone TaxAct 760
+            # prints (2008-2020 era) — the universal card parser over both
+            # markers, tolerant of the label pollution those prints carry
+            # (the TaxAct label block runs ~140 lines before the values).
+            if not any(f.field_code == "ret_st_va_taxable_income" for f in facts):
+                for marker in (_STATE_CARD_MARKER, _VA760CG_HEADER):
+                    for i, ln in enumerate(lines):
+                        if not marker.search(ln):
+                            continue
+                        rows = _va_card_summary_rows(
+                            _signed_cluster(lines, i, _BAA_STAMP, max_lines=170)
+                        )
+                        if rows:
+                            _emit_va_rows(rows)
+                            break
+                    if any(f.field_code == "ret_st_va_taxable_income" for f in facts):
+                        break
 
     facts.sort(key=lambda f: f.field_code)
     return facts

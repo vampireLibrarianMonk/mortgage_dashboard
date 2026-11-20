@@ -263,15 +263,19 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
         elif ft is FormType.f1040_il:
             il_doc_id = doc.id
             il_fvals = fvals
-            as_filed_states.append({
-                "name": _STATE_NAMES.get(doc.form_type.value, doc.form_type.value),
-                "taxable_income": _num(fvals.get("il_taxable_income")),
-                "total_tax": _num(fvals.get("il_tax")),
-                "payments": None,
-                "refund": None,
-                "balance_due": _num(fvals.get("il_balance_due")),
-                "document_id": doc.id,
-            })
+            # Only a doc that actually extracted Illinois facts contributes a
+            # state card — a misclassified scan with zero facts would
+            # otherwise surface a phantom all-empty Illinois entry.
+            if fvals:
+                as_filed_states.append({
+                    "name": _STATE_NAMES.get(doc.form_type.value, doc.form_type.value),
+                    "taxable_income": _num(fvals.get("il_taxable_income")),
+                    "total_tax": _num(fvals.get("il_tax")),
+                    "payments": None,
+                    "refund": None,
+                    "balance_due": _num(fvals.get("il_balance_due")),
+                    "document_id": doc.id,
+                })
         elif ft in (FormType.f1095_c, FormType.f3922):
             informational.append({
                 "form_type": ft.value,
