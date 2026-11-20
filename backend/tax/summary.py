@@ -1,4 +1,4 @@
-﻿"""Tax Year Summary: aggregated, facts-only view the Tax Prep UI renders.
+"""Tax Year Summary: aggregated, facts-only view the Tax Prep UI renders.
 
 Deterministic and honest: every number comes from a stored TaxFact or the
 document inventory — nothing is invented, no tax is computed. The only derived
@@ -224,20 +224,30 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
             side_income.append(_side_income_entry(doc, fvals))
         elif ft is FormType.f1040:
             # Years with several 1040-classified prints (e.g. a signature page
-            # filed after the return) keep the doc with the MOST facts — the
-            # filename-sorted last one can be a bare signature page.
-            if as_filed_federal and len(fvals) <= len(fed_fvals or {}):
-                continue
-            as_filed_federal = {
-                "agi": _num(fvals.get("ret_agi")),
-                "taxable_income": _num(fvals.get("ret_taxable_income")),
-                "total_tax": _num(fvals.get("ret_total_tax")),
-                "total_payments": _num(fvals.get("ret_total_payments")),
-                "balance_due": _num(fvals.get("ret_amount_owed")),
-                "refund": _num(fvals.get("ret_refund")),
-                "filing_status": fvals.get("ret_filing_status"),
-                "document_id": doc.id,
-            }
+            # or a state-return doc filed after the federal return) keep the
+            # doc with the most FEDERAL as-filed fields - a raw fact count
+            # would let a state-return doc (many ret_st_ facts, no federal
+            # rows) clobber the federal card.
+            _fed_keys = ("ret_agi", "ret_taxable_income", "ret_total_tax",
+                         "ret_total_payments", "ret_amount_owed", "ret_refund",
+                         "ret_filing_status")
+            fed_fields = sum(1 for k in _fed_keys if fvals.get(k) not in (None, ""))
+            best_fields = sum(1 for k in _fed_keys if (fed_fvals or {}).get(k) not in (None, ""))
+            # The gate guards ONLY the federal card: a losing doc (e.g. a
+            # standalone state return) still contributes its state entries.
+            if not (as_filed_federal and fed_fields <= best_fields):
+                as_filed_federal = {
+                    "agi": _num(fvals.get("ret_agi")),
+                    "taxable_income": _num(fvals.get("ret_taxable_income")),
+                    "total_tax": _num(fvals.get("ret_total_tax")),
+                    "total_payments": _num(fvals.get("ret_total_payments")),
+                    "balance_due": _num(fvals.get("ret_amount_owed")),
+                    "refund": _num(fvals.get("ret_refund")),
+                    "filing_status": fvals.get("ret_filing_status"),
+                    "document_id": doc.id,
+                }
+                if fvals:
+                    fed_fvals = fvals
             # State summaries embedded in the same e-file package (e.g. the
             # Virginia 760 block) — one entry per state found.
             st: dict[str, dict] = {}
