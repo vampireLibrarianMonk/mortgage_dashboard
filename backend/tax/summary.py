@@ -259,7 +259,8 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
             # Deductions & adjustments the filed package shows, with the
             # jurisdiction each one actually reduces.
             deductions.extend(_deduction_entries(doc.id, fvals))
-            fed_fvals = fvals
+            if fvals:
+                fed_fvals = fvals
         elif ft is FormType.f1040_il:
             il_doc_id = doc.id
             il_fvals = fvals
@@ -283,6 +284,25 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
                 "document_id": doc.id,
             })
 
+    # A year whose return survived only as an IRS transcript (e.g. a CP2000
+    # package classified W-2) still surfaces its as-filed card: fall back to
+    # any document carrying the transcript's ret_* facts.
+    if fed_fvals is None:
+        for _doc_id, _flist in facts_by_doc.items():
+            _fv = _facts_map(_flist)
+            if _fv and "ret_agi" in _fv and "ret_fed_wages" in _fv:
+                fed_fvals = _fv
+                as_filed_federal.update({
+                    "agi": _num(_fv.get("ret_agi")),
+                    "taxable_income": _num(_fv.get("ret_taxable_income")),
+                    "total_tax": _num(_fv.get("ret_total_tax")),
+                    "total_payments": _num(_fv.get("ret_total_payments")),
+                    "refund": _num(_fv.get("ret_refund")),
+                    "balance_due": _num(_fv.get("ret_amount_owed")),
+                    "filing_status": _fv.get("ret_filing_status"),
+                    "document_id": _doc_id,
+                })
+                break
     # Totals over what the facts actually carry (None is treated as absent).
     if il_doc_id is not None and not any(
         d["jurisdiction"] == "Illinois" for d in deductions
