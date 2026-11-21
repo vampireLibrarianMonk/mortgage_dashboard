@@ -257,7 +257,7 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
                     st.setdefault(m.group(1), {})[m.group(2)] = val
             for slug in sorted(st):
                 kv = st[slug]
-                as_filed_states.append({
+                row = {
                     "name": kv.get("state_name"),
                     "taxable_income": _num(kv.get("taxable_income")),
                     "total_tax": _num(kv.get("total_tax")),
@@ -265,7 +265,19 @@ def build_summary(year: int, docs: list[TaxDocument], facts_by_doc: dict[str, li
                     "refund": _num(kv.get("refund")),
                     "balance_due": _num(kv.get("balance_due")),
                     "document_id": doc.id,
-                })
+                }
+                # Duplicate prints of the same return carry identical state
+                # cards - collapse them so the UI shows one card per state.
+                dup = any(
+                    e["name"] == row["name"]
+                    and e["taxable_income"] == row["taxable_income"]
+                    and e["total_tax"] == row["total_tax"]
+                    and e["refund"] == row["refund"]
+                    and e["balance_due"] == row["balance_due"]
+                    for e in as_filed_states
+                )
+                if not dup:
+                    as_filed_states.append(row)
             # Deductions & adjustments the filed package shows, with the
             # jurisdiction each one actually reduces.
             deductions.extend(_deduction_entries(doc.id, fvals))
