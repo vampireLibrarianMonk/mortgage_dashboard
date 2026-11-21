@@ -79,3 +79,7 @@ frontend/test-results/
 
 # personal backlog (kept local)
 backlog.txt
+
+# tax layout-decoding analysis artifacts
+backend/_textdump/
+backend/_audit.py
